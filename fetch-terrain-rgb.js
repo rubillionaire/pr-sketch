@@ -4,10 +4,10 @@ const tilebelt = require('@mapbox/tilebelt')
 const path = require('path')
 
 const directory = process.argv[2]
-console.log(directory)
+
 ;(async () => {
   const mapboxKey = (await fsp.readFile('mapbox.key')).toString().trim()
-  console.log(mapboxKey)
+
   // [west, south, east, north]
   const prBbox = [-67.302737, 17.823223, -65.119731, 18.553834]
   const prRootTile = tilebelt.bboxToTile(prBbox)

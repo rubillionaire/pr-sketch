@@ -27,20 +27,20 @@ function terrainImgToMesh ({ sampleRate, pixels, bbox = [0,0,1,1] }) {
     const positions = []
     const imgSize = pixels.shape
     let maxElevation = 0;
-    for (let i = 0; i < sampleRate; i++) {
-      for (let j = 0; j < sampleRate; j++) {
-        let x = Math.floor((imgSize[0]-0) / sampleRate * i)
-        let y = Math.floor((imgSize[1]-0) / sampleRate * j)
+    for (let i = 0; i <= sampleRate; i++) {
+      for (let j = 0; j <= sampleRate; j++) {
+        let x = Math.floor((imgSize[0]-1) / sampleRate * i)
+        let y = Math.floor((imgSize[1]-1) / sampleRate * j)
         const r = pixels.get(x, y, 0)
         const g = pixels.get(x, y, 1)
         const b = pixels.get(x, y, 2)
         // height based on mapbox terrain tile
         const z = -10000 + ((r * 256 * 256 + g * 256 + b) * 0.1)
         maxElevation = Math.max(maxElevation, z)
+        // west to east
         const lon = minX + (xExtent * (i / sampleRate))
+        // north to south
         const lat = maxY - (yExtent * (j / sampleRate))
-        // const lat = minY + (yExtent * (j / sampleRate))
-        // positions.push([i, j, z])
         positions.push([lon, lat, z])
       }
     }
@@ -53,16 +53,16 @@ function terrainImgToMesh ({ sampleRate, pixels, bbox = [0,0,1,1] }) {
   // cells:start
   const cells = (({ sampleRate }) => {
     const cells = []
-    const dim =  sampleRate - 1
+    // const dim =  sampleRate - 1
     // loop through all positions, except the last row
-    for (let i = 0; i < sampleRate * sampleRate; i++) {
-      const x = i % sampleRate
-      const y = Math.floor(i / sampleRate)
+    for (let i = 0; i < positions.length; i++) {
+      const x = Math.floor(i % (sampleRate + 1))
+      const y = Math.floor(i / (sampleRate + 1))
       // do not wrap on the edges
-      if (x === dim) continue
-      if (y === dim) continue
-      cells.push([i, i + 1, i + sampleRate])
-      cells.push([i + 1, i + sampleRate + 1, i + sampleRate])
+      if (x === sampleRate) continue
+      if (y === sampleRate) continue
+      cells.push([i, i + 1, i + sampleRate + 1])
+      cells.push([i + 1, i + sampleRate + 2, i + sampleRate + 1])
     }
     return cells
   })({ sampleRate })

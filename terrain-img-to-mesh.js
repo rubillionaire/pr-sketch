@@ -1,4 +1,6 @@
 const angleNormals = require('angle-normals')
+const PerlinNoise = require('perlin-noise-3d')
+const perlinNoise = new PerlinNoise()
 
 module.exports = terrainImgToMesh;
 
@@ -86,7 +88,17 @@ function terrainImgToMesh ({ sampleRate, pixels, bbox = [0,0,1,1] }) {
       // add next 3 indicies as the next cell
       nCells.push([nPositions.length, nPositions.length + 1, nPositions.length + 2])
       // push the positions with their w/a value as the cell max elevation
-      nPositions = nPositions.concat(cell.map(c => positions[c].concat([cellMaxElevation])))
+      nPositions = nPositions.concat(
+        cell.map(c => {
+          // if the maxElevation is 0, then assign perlin noise elevation to
+          // each of the positon valies
+          if (cellMaxElevation === 0) {
+            const p = positions[c]
+            return [p[0], p[1], perlinNoise.get(p[0], p[1], p[2])].concat([cellMaxElevation])
+          }
+          return positions[c].concat([cellMaxElevation])
+        })
+      )
     }
     return {
       nPositions,

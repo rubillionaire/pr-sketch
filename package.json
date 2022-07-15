@@ -21,6 +21,7 @@
     "glslify": "^7.1.1",
     "mixmap": "^1.6.0",
     "node-fetch": "^2.6.7",
+    "perlin-noise-3d": "^0.5.4",
     "regl": "^2.1.0",
     "resl": "^1.0.3"
   },

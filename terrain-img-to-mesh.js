@@ -18,7 +18,11 @@ module.exports = terrainImgToMesh;
  * @return {array} mesh.cells             [vec3(int)]
  * @return {array} mesh.normals         [vec3(float)] cell normals
  */
-function terrainImgToMesh ({ sampleRate, pixels, bbox = [0,0,1,1] }) {
+function terrainImgToMesh ({
+  sampleRate,
+  pixels,
+  bbox = [0,0,1,1],
+}) {
   const xExtent = bbox[2] - bbox[0]
   const yExtent = bbox[3] - bbox[1]
   const minX = bbox[0]

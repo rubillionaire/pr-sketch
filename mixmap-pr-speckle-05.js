@@ -1,12 +1,11 @@
 /**
- * mixmap-pr-speckle-06
+ * mixmap-pr-speckle-05
  * - attempt at getting the speckle pattern
  * - 1 - getting a decent first pass
  * - 2 - perlin noise for water
  * - 3 - up the sample rate just to see how the speckle changes, its nice
  * - 4 - light direction for the land to animate it, first draft, not great
  * - 5 - consistent color gradient from sea to land
- * ? bezier inteprolation on lower sample rate
  * ? light direction for the land to animate it?
  */
 const mixmap = require('mixmap')
@@ -15,7 +14,7 @@ const resl = require('resl')
 const glsl = require('glslify')
 const geojson2mesh = require('earth-mesh')
 const tilebelt = require('@mapbox/tilebelt')
-const terrainImgToMesh = require('./terrain-img-to-bezier-mesh.js')
+const terrainImgToMesh = require('./terrain-img-to-mesh.js')
 const ndarray = require('ndarray')
 const vec3 = require('gl-vec3')
 
@@ -23,7 +22,7 @@ const mix = mixmap(regl, {
   extensions: ['oes_element_index_uint'],
 })
 
-const sampleRate = 32
+const sampleRate = 128
 
 const prWE = [-67.356661, -65.575714] 
 const prCenter = 18.220148006000038
@@ -205,8 +204,8 @@ const drawTerrainMeshTile = map.createDraw({
         // ambient = ambientLightAmount * color;
         float z = snoise(vec3(vPosition.x, vPosition.y, vPosition.z));
         // shrink into 0 - 0.5 range
-        percentElevation = z/1.0 * 0.25 + 0.5 + (sin(tick/1000.0) * 0.2);
-        // percentElevation = z/1.0 * 0.25 + 0.5;
+        // percentElevation = z/1.0 * 0.25 + 0.5 + (sin(tick/1000.0) * 0.2);
+        percentElevation = z/1.0 * 0.25 + 0.5;
         // percentElevation = z/1.0 * 0.1 + 0.25;
       }
       else {
@@ -218,9 +217,9 @@ const drawTerrainMeshTile = map.createDraw({
         // shrink into 0.5 - 1.0 range
         // percentElevation = (vPosition.z/groundMaxElevation) * 0.5 + 0.5 + (cos(tick/100.0) * 0.1);
         // percentElevation = (vPosition.z/groundMaxElevation) * 0.25 + 0.75;
-        // percentElevation = (vPosition.z/groundMaxElevation) * 0.5 + 0.4;
+        percentElevation = (vPosition.z/groundMaxElevation) * 0.5 + 0.4;
         // percentElevation = cosTheta * (vPosition.z/vPosition.w);
-        percentElevation = vPosition.z/groundMaxElevation * cosTheta + 0.3;
+        // percentElevation = vPosition.z/groundMaxElevation * cosTheta + 0.3;
       }
       float clampedPercentElevation = clamp(percentElevation, 0.0, 1.0);
       float elevationThreshold = clampedPercentElevation - 0.00;
@@ -254,7 +253,7 @@ const drawTerrainMeshTile = map.createDraw({
     groundMaxElevation: map.prop('maxElevation'),
     zindex: map.prop('zindex'),
     lightDir: ({ tick }) => {
-      // lightDir[0] = Math.sin(tick/100) * 180
+      lightDir[0] = Math.sin(tick/100) * 180
       return lightDir
     },
     tick: ({ tick }) => tick,
@@ -338,19 +337,7 @@ map.addLayer({
         map.draw()
 
         const pixels = pixelsFromImg(tile)
-        const bezierSteps = 5
-        // todo this interpolates along the edges. i want an interpolation
-        // point in the middle of the tri, to give a false new point in the
-        // middle that rounds out the tri through bezier interpolation
-        // and then earcut from there?
-        const bezierControlPercent = [0.5, 0.5, 1.2]
-        const mesh = terrainImgToMesh({
-          pixels,
-          sampleRate,
-          bbox,
-          bezierSteps,
-          bezierControlPercent,
-        })
+        const mesh = terrainImgToMesh({ pixels, sampleRate, bbox })
         const propMesh = {
           id,
           key,

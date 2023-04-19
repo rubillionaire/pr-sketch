@@ -1,34 +1,40 @@
-// buffered-coast-lines-03
+// buffered-coast-lines-01
 // - 01 - use georender instead of straight geojson-to-mesh
 //   - this is motivated by using its shareds and styling, perhaps not necessary,
 //   we could likely align otherwise, but its a start. also getting familiar with
 //   how we can use georender-style2png, looks like we must work within the 
 //   feature set of OSM defined in the module. we can give geojson-georender
 //   a property mapping function though
-// - 02 - make the coast line buffers, they are dissolved so they meet up
-//   with each other.
-// - 03 - try with world, and maybe better colors?
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
 const glsl = require('glslify')
 const buffer = require('@turf/buffer')
-const {polygonToLine, multiPolygonToLine} = require('@turf/polygon-to-line')
-const dissolve = require('@turf/dissolve')
 
 const toGeorender = require('georender-geojson/to-georender')
 const shaders = require('mixmap-georender')
 const prepare = require('mixmap-georender/prepare')
 const decode = require('georender-pack/decode')
 const getImagePixels = require('get-image-pixels')
-const makeStylesheet = require('./make-stylesheet')
 
 const mix = mixmap(regl, {
   extensions: ['oes_element_index_uint'],
 })
 
+const sampleRate = 32
+
+const prWE = [-67.356661, -65.575714] 
+const prCenter = 18.220148006000038
+// screen height/width = prHeight/prWidth
+// screen height/width  * prWidth = prHeight
+const prHorizontal = (prWE[1] - prWE[0])
+const prHeight = (window.innerHeight/window.innerWidth * prHorizontal)
+// const prSN = [prCenter - prHeight/2, prCenter + prHeight/2]
+const prSN = [prCenter - prHorizontal/2, prCenter + prHorizontal/2]
+
 const map = mix.create({
-  viewbox: [-180, -90, 180, 90],
+  // viewbox: [-67.356661,17.854597,-65.575714,18.517377],
+  viewbox: [prWE[0],prSN[0],prWE[1],prSN[1]],
   backgroundColor: [0.3, 0.3, 0.3, 1.0],  
 })
 
@@ -80,16 +86,72 @@ document.body.appendChild(map.render({
 }))
 // setup-map:end
 
+const drawNE = map.createDraw({
+  vert: `
+    precision highp float;
+
+    attribute vec2 position;
+    
+    uniform vec4 viewbox;
+    uniform vec2 offset;
+    uniform float zindex;
+    uniform float aspect;
+
+    void main () {
+      vec2 p = position.xy + offset;
+      gl_Position = vec4(
+        (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
+        (p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0,
+        1.0/(1.0 + zindex),
+        1);
+    }
+  `,
+  frag: `
+    precision highp float;
+
+    uniform vec3 color;
+
+    void main () {
+      gl_FragColor = vec4(color,1);
+    }
+  `,
+  attributes: {
+    position: map.prop('positions'),
+  },
+  uniforms: {
+    zindex: map.prop('zindex'),
+    color: (context, props) => {
+      if (props.color) return props.color
+      else return [1,0,0]
+    },
+  },
+  elements: map.prop('cells'),
+})
 
 resl({
   manifest: {
     neGeojson: {
       type: 'text',
-      src: 'ne-110m-land.json',
+      src: 'ne-10m-land-pr.json',
       parser: JSON.parse,
     },
+    style: {
+      type: 'image',
+      src: 'ne-stylesheet-texture.png',
+    },
   },
-  onDone: async ({ neGeojson }) => {
+  onDone: ({ neGeojson, style }) => {
+    // const bufferDistances = [1,2,3,4,5]
+    // bufferDistances.forEach((bufferDistance, index) => {
+    //   const percent = 1 - index/bufferDistances.length
+    //   const bufferedNeMesh = geojson2mesh(buffer(neGeojson, bufferDistance, {units: 'miles'}))
+    //   drawNE.props.push({
+    //     positions: bufferedNeMesh.triangle.positions,
+    //     cells: bufferedNeMesh.triangle.cells,
+    //     color: [0,1 * percent, 0],
+    //     zindex: 9 - index,
+    //   })
+    // })
 
     const geoRender = shaders(map)
     const draw = {
@@ -105,34 +167,6 @@ resl({
       pointT: map.createDraw(geoRender.points),
       label: {},
     }
-
-    let decoded = []
-
-    const bufferDistances = new Array(20).fill(0).map((_, i) => i + 1)
-    bufferDistances.forEach((bufferDistance, index) => {
-      const percent = 1 - index/bufferDistances.length
-      const buffered = buffer(neGeojson, bufferDistance * + index, {units: 'miles'})
-      const dissolved = dissolve(buffered)
-      dissolved.features = dissolved.features.map((feature) => {
-        if (feature.geometry.type === 'Polygon') {
-          const line = polygonToLine(feature)
-          return line
-        }
-        else if (feature.geometry.type === 'MultiPolygon') {
-          const line = multiPolygonToLine(feature)
-          return line
-        }
-        else return feature
-      })
-      const lineGeorender = toGeorender(dissolved, {
-        propertyMap: function (props) {
-          return Object.assign(props, { 'natural': 'coastline' })
-        }  
-      })
-      decoded = decoded.concat(lineGeorender.map((buf) => {
-        return decode([buf])
-      }))
-    })
     
     const neGeorenderBufs = toGeorender(neGeojson, {
       propertyMap: function (props) {
@@ -140,36 +174,11 @@ resl({
       }
     })
 
-    decoded = decoded.concat(neGeorenderBufs.map((buf) => {
+    const decoded = neGeorenderBufs.map((buf) => {
       return decode([buf])
-    }))
+    })
 
-    const stylesheet = {
-      'natural.other': {
-        'area-fill-color': '#db22c6',
-      },
-      'natural.coastline': {
-        "line-fill-width": 2,
-        "line-fill-color": "#1f9393",
-        "line-fill-style": "dash",
-        "line-fill-dash-length": 30,
-        "line-fill-dash-gap": 6,
-        "line-stroke-color": "#ffb6c1",
-        "line-stroke-width": 2,
-        "line-stroke-style": "dash",
-        "line-stroke-dash-color": "#000",
-        "line-stroke-dash-length": 3,
-        "line-stroke-dash-gap": 36,
-        "line-opacity": 100,
-        "line-zindex": 5.0,
-        "line-label-fill-opacity": 100,
-        "line-label-stroke-opacity": 100,
-      },
-    }
-
-    const style = await makeStylesheet(stylesheet)
-    // const stylePixels = getImagePixels(style)
-    const stylePixels = style
+    const stylePixels = getImagePixels(style)
     const styleTexture = map.regl.texture(style)
 
     const geodata = prepare({

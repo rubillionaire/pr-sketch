@@ -1,4 +1,4 @@
-// buffered-coast-lines-03
+// buffered-coast-lines-02
 // - 01 - use georender instead of straight geojson-to-mesh
 //   - this is motivated by using its shareds and styling, perhaps not necessary,
 //   we could likely align otherwise, but its a start. also getting familiar with
@@ -7,7 +7,6 @@
 //   a property mapping function though
 // - 02 - make the coast line buffers, they are dissolved so they meet up
 //   with each other.
-// - 03 - try with world, and maybe better colors?
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -27,8 +26,20 @@ const mix = mixmap(regl, {
   extensions: ['oes_element_index_uint'],
 })
 
+const sampleRate = 32
+
+const prWE = [-67.356661, -65.575714] 
+const prCenter = 18.220148006000038
+// screen height/width = prHeight/prWidth
+// screen height/width  * prWidth = prHeight
+const prHorizontal = (prWE[1] - prWE[0])
+const prHeight = (window.innerHeight/window.innerWidth * prHorizontal)
+// const prSN = [prCenter - prHeight/2, prCenter + prHeight/2]
+const prSN = [prCenter - prHorizontal/2, prCenter + prHorizontal/2]
+
 const map = mix.create({
-  viewbox: [-180, -90, 180, 90],
+  // viewbox: [-67.356661,17.854597,-65.575714,18.517377],
+  viewbox: [prWE[0],prSN[0],prWE[1],prSN[1]],
   backgroundColor: [0.3, 0.3, 0.3, 1.0],  
 })
 
@@ -85,7 +96,7 @@ resl({
   manifest: {
     neGeojson: {
       type: 'text',
-      src: 'ne-110m-land.json',
+      src: 'ne-10m-land-pr.json',
       parser: JSON.parse,
     },
   },

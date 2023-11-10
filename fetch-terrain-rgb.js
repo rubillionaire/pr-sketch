@@ -10,6 +10,7 @@ const directory = process.argv[2]
 
   // [west, south, east, north]
   const prBbox = [-67.302737, 17.823223, -65.119731, 18.553834]
+  prBbox[3] += 0.8
   const prRootTile = tilebelt.bboxToTile(prBbox)
 
   const tileSet = getChildrenAtZoom([prRootTile], 8)

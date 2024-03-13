@@ -1,4 +1,4 @@
-// radiating-coastline-02-wip
+// radiating-coastline-01
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with

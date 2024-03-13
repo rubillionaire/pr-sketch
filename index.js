@@ -1,5 +1,8 @@
-// radiating-coastline-00-wip
+// radiating-coastline-00
 // - fork of buffered-coast-lines-03
+// - 00
+// - round trips geo data into and out of the georender format with
+// additional tags for shader consumption. v hard coded to get results
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -8,10 +11,10 @@ const buffer = require('@turf/buffer')
 const {polygonToLine, multiPolygonToLine} = require('@turf/polygon-to-line')
 const dissolve = require('@turf/dissolve')
 
-const toGeorender = require('georender-geojson/to-georender')
-const shaders = require('mixmap-georender')
-const prepare = require('mixmap-georender/prepare')
-const decode = require('georender-pack/decode')
+const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
+const shaders = require('@rubenrodriguez/mixmap-georender')
+const prepare = require('@rubenrodriguez/mixmap-georender/prepare')
+const decode = require('@rubenrodriguez/georender-pack/decode')
 const getImagePixels = require('get-image-pixels')
 const makeStylesheet = require('./make-stylesheet')
 
@@ -81,16 +84,55 @@ document.body.appendChild(map.render({
 const geoRender = shaders(map)
 const geoRenderTick = {
   lineFill: Object.assign({}, geoRender.lineFill, {
+    vert: glsl`
+      precision highp float;
+      #pragma glslify: Line = require('glsl-georender-style-texture/line.h');
+      #pragma glslify: readLine = require('glsl-georender-style-texture/line.glsl');
+      attribute vec2 position, normal, dist;
+      attribute float featureType, index;
+      attribute float radiatingCoastlineBufferIndex, radiatingCoastlineBufferDistance;
+      uniform vec4 viewbox;
+      uniform vec2 offset, size;
+      uniform float featureCount, aspect, zoom;
+      uniform sampler2D styleTexture;
+      varying float vft, vindex, zindex, vdashLength, vdashGap;
+      varying vec2 vpos, vnorm, vdist;
+      varying vec4 vcolor;
+      varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
+      void main () {
+        vft = featureType;
+        Line line = readLine(styleTexture, featureType, zoom, featureCount);
+        vcolor = line.fillColor;
+        vdashLength = line.fillDashLength;
+        vdashGap = line.fillDashGap;
+        vindex = index;
+        zindex = line.zindex + 0.1;
+        vec2 p = position.xy + offset;
+        vnorm = normalize(normal)*(line.fillWidth/size);
+        vdist = dist;
+        gl_Position = vec4(
+          (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
+          ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
+          1.0/(1.0+zindex), 1);
+        gl_Position += vec4(vnorm, 0, 0);
+        vpos = gl_Position.xy;
+        vRadiatingCoastlineBufferIndex = radiatingCoastlineBufferIndex;
+        vRadiatingCoastlineBufferDistance = radiatingCoastlineBufferDistance;
+      }
+    `,
     frag: `
       precision highp float;
+
       uniform vec4 viewbox;
       uniform vec2 size;
       uniform float aspect;
       uniform float tick;
-      uniform float bufferIndex;
       varying float vdashLength, vdashGap;
       varying vec2 vdist;
       varying vec4 vcolor;
+
+      varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
+
       void main () {
         vec2 vb = vec2(viewbox.z-viewbox.x, viewbox.w-viewbox.y);
         vec2 s = vec2(size.x, size.y*aspect);
@@ -98,19 +140,32 @@ const geoRenderTick = {
         float d = vdashLength;
         float g = vdashGap;
         float x = 1.0 - step(d, mod(t, d+g));
-        // float tt = sin(tick/10.0) * 0.5 + 0.5 + bufferIndex;
-        float tt = sin(tick/10.0) * 0.5 + 0.5;
+        float tt = sin(tick/10.0) * 0.5 + 0.5 * vRadiatingCoastlineBufferIndex;
+        // float tt = sin(tick/10.0) * 0.5 + 0.5;
         gl_FragColor = vec4(vcolor.xyz, vcolor.w * x * tt);
         //gl_FragColor = vec4(mix(vec3(0,1,0), vec3(1,0,0), x), 1.0);
       }
     `,
     uniforms: Object.assign({}, geoRender.lineFill.uniforms, {
       tick: map.regl.context('tick'),
-      bufferIndex: map.prop('bufferIndex'),
+    }),
+    attributes: Object.assign({}, geoRender.lineFill.attributes, {
+      radiatingCoastlineBufferIndex: map.prop('radiatingCoastlineBufferIndex'),
+      radiatingCoastlineBufferDistance: map.prop('radiatingCoastlineBufferDistance'),
     }),
   })
 }
-console.log(geoRenderTick)
+console.log(geoRenderTick.lineFill)
+
+// TODO QUESTIOn
+// are we unnecessarily conflating extra props with feature types?
+const featureTypes = [
+  'natural.other',
+  'natural.coastline',
+  'radiatingCoastlineBufferIndex',
+  'radiatingCoastlineBufferDistance',
+]
+
 resl({
   manifest: {
     neGeojson: {
@@ -150,31 +205,35 @@ resl({
         else if (feature.geometry.type === 'MultiPolygon') {
           line = multiPolygonToLine(feature)
         }
-        line.properties.bufferIndex = index/bufferCount
-        line.properties.bufferDistance = bufferDistance
+        line.properties['radiatingCoastlineBufferIndex'] = index/bufferCount
+        line.properties['radiatingCoastlineBufferDistance'] = bufferDistance
         return line
       })
       const lineGeorender = toGeorender(dissolved, {
         propertyMap: function (props) {
           return Object.assign(props, {
             'natural': 'coastline',
+            'name': 'puerto rico',
           })
-        }  
+        },
+        featureTypes,
+        includeAllTags: true,
       })
       decoded = decoded.concat(lineGeorender.map((buf) => {
         return decode([buf])
       }))
     })
     
-    const neGeorenderBufs = toGeorender(neGeojson, {
-      propertyMap: function (props) {
-        return Object.assign(props, { 'natural': 'other' })
-      }
-    })
+    // const neGeorenderBufs = toGeorender(neGeojson, {
+    //   propertyMap: function (props) {
+    //     return Object.assign(props, { 'natural': 'other' })
+    //   },
+    //   featureTypes,
+    // })
 
-    decoded = decoded.concat(neGeorenderBufs.map((buf) => {
-      return decode([buf])
-    }))
+    // decoded = decoded.concat(neGeorenderBufs.map((buf) => {
+    //   return decode([buf])
+    // }))
 console.log({decoded})
     const stylesheet = {
       'natural.other': {
@@ -204,15 +263,16 @@ console.log({decoded})
     const stylePixels = style
     const styleTexture = map.regl.texture(style)
 
-    const t0 = performance.now()
     const geodata = prepare({
       stylePixels,
       styleTexture,
+      imageSize: [style.width, style.height],
       decoded: mergeDecoded(decoded),
+      featureCount: featureTypes.length,
     })
 
     const props = geodata.update(map.zoom)
-    
+console.log({props})    
     // setProps(draw.point.props, props.pointP)
     setProps(draw.lineFill.props, props.lineP)
     // setProps(draw.lineStroke.props, props.lineP)
@@ -231,7 +291,6 @@ console.log({decoded})
       Object.assign({}, map._props()[0])
     )
     // draw.lineFill.draw(draw.lineFill.props)
-    
     // - continus run
     map.regl.frame(() => {
       draw.lineFill.draw(draw.lineFill.props)    
@@ -266,6 +325,8 @@ function mergeDecoded(mdecoded) {
       types: new Float32Array(lineSize),
       positions: new Float32Array(lineSize*2),
       normals: new Float32Array(lineSize*2),
+      radiatingCoastlineBufferIndex: new Float32Array(lineSize),
+      radiatingCoastlineBufferDistance: new Float32Array(lineSize),
       labels: {},
     },
     area: {
@@ -294,6 +355,7 @@ function mergeDecoded(mdecoded) {
       pointOffset++
     }
     Object.assign(decoded.point.labels, d.point.labels)
+    console.log({d})
     for (var k = 0; k < d.line.types.length; k++) {
       decoded.line.ids[lineOffset] = d.line.ids[k]
       decoded.line.types[lineOffset] = d.line.types[k]
@@ -301,6 +363,12 @@ function mergeDecoded(mdecoded) {
       decoded.line.positions[lineOffset*2+1] = d.line.positions[k*2+1]
       decoded.line.normals[lineOffset*2+0] = d.line.normals[k*2+0]
       decoded.line.normals[lineOffset*2+1] = d.line.normals[k*2+1]
+      if (typeof d.line.radiatingCoastlineBufferIndex[k] === 'number') {
+        decoded.line.radiatingCoastlineBufferIndex[lineOffset] = d.line.radiatingCoastlineBufferIndex[k]
+      }
+      if (typeof d.line.radiatingCoastlineBufferDistance[k] === 'number') {
+        decoded.line.radiatingCoastlineBufferDistance[lineOffset] = d.line.radiatingCoastlineBufferDistance[k]
+      }
       lineOffset++
     }
     Object.assign(decoded.line.labels, d.line.labels)

@@ -17,10 +17,12 @@
     "@mapbox/tilebelt": "^1.0.2",
     "@turf/boolean-point-in-polygon": "^6.5.0",
     "@turf/buffer": "^6.5.0",
+    "@turf/difference": "^6.5.0",
     "@turf/dissolve": "^6.5.0",
     "@turf/distance": "^6.5.0",
     "@turf/flatten": "^6.5.0",
     "@turf/helpers": "^6.5.0",
+    "@turf/intersect": "^6.5.0",
     "@turf/nearest-point-on-line": "^6.5.0",
     "@turf/polygon-to-line": "^6.5.0",
     "angle-normals": "^1.0.0",
@@ -44,7 +46,8 @@
     "node-fetch": "^2.6.7",
     "perlin-noise-3d": "^0.5.4",
     "regl": "^2.1.0",
-    "resl": "^1.0.3"
+    "resl": "^1.0.3",
+    "robust-point-in-polygon": "^1.0.3"
   },
   "devDependencies": {
     "budo": "^11.7.0",

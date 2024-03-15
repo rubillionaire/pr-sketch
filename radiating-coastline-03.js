@@ -16,7 +16,7 @@
 // - adds pr mainland
 // - tweaks color palette
 // - adds speckle texture to coasatline
-// - ? was going for more of a shadow but applying the elevation
+// ? was going for more of a shadow but applying the elevation
 // show cases that the elevation is not smooth across the cells
 // not sure how to account for this, but this is decent for now
 const mixmap = require('mixmap')

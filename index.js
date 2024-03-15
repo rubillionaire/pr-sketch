@@ -1,4 +1,4 @@
-// radiating-coastline-03
+// radiating-coastline-04-wip
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with
@@ -19,6 +19,8 @@
 // - ? was going for more of a shadow but applying the elevation
 // show cases that the elevation is not smooth across the cells
 // not sure how to account for this, but this is decent for now
+// - 04
+// - fix coastline?
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -29,7 +31,10 @@ const dissolve = require('@turf/dissolve')
 const nearestPointOnLine = require('@turf/nearest-point-on-line').default
 const { point } = require('@turf/helpers')
 const distance = require('@turf/distance').default
-const pointInPolygon = require('@turf/boolean-point-in-polygon').default
+// const pointInPolygon = require('@turf/boolean-point-in-polygon').default
+const robustPointInPolygon = require("robust-point-in-polygon")
+const intersect = require('@turf/intersect').default
+const difference = require('@turf/difference').default
 
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
 const shaders = require('@rubenrodriguez/mixmap-georender')
@@ -282,6 +287,8 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
     varying vec2 vpos;
     varying float vElevation;
 
+    uniform vec4 colorForeground, colorBackground;
+
     float random ( vec2 st ) {
       return fract(
         sin(
@@ -292,28 +299,37 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
 
     void main () {
       float noramalizedElevation = vElevation * 0.5 + 0.5;
-      float a = min(max(0.0, noramalizedElevation), 1.0);
+      float clampedElevation = min(max(0.0, noramalizedElevation), 1.0);
       float randomThreshold = sqrt(random(vec2(random(vpos.xy), vpos.yx)));
       // float threshold = 0.9;
       float threshold = 1.0 - random(vec2(vpos.x, vElevation));
       // - this looks nice, but for some reason our elevation is not smooth
       // across the polygons
       // float threshold = 1.0 - vElevation;
-      if (randomThreshold < threshold) {
-        discard;
+      // if (randomThreshold < threshold) {
+      //   discard;
+      // }
+      // vec4 color = mix(colorBackground, colorForeground, clampedElevation);
+      vec4 color = vec4(1.0, 0.0, 1.0, 1.0);
+      if (vElevation < 0.0) {
+        color = vec4(0.0, 1.0, 0.0, 1.0);
       }
-      gl_FragColor = vec4(vcolor.xyz, 1.0);
+      gl_FragColor = vec4(color.xyz, 1.0);
     }
   `,
   attributes: Object.assign({}, geoRenderShaders.areas.attributes, {
     elevation: map.prop('elevation'),
   }),
+  uniforms: Object.assign({}, geoRenderShaders.areas.uniforms, {
+    colorBackground: colors.glslBackground,
+    colorForeground: colors.glslForeground, 
+  })
 })
 
 console.log (coastlineShadowShader)
 var includeAllTags = true
 var includeIsland = false
-const bufferCount = 20
+const bufferCount = 14
 
 resl({
   manifest: {
@@ -344,7 +360,7 @@ resl({
 
     const units = 'kilometers'
     const bufferIncrement = 1.0 // kilometers
-    const bufferDistances = new Array(bufferCount).fill(0).map((_, i) => i*bufferIncrement)
+    const bufferDistances = new Array(bufferCount).fill(0).map((_, i) => Math.pow(i*bufferIncrement, 1.15))
     bufferDistances.forEach((bufferDistance, index) => {
       if (index === 0) return
       const buffered = buffer(neGeojson, bufferDistance, { units })
@@ -391,44 +407,66 @@ resl({
     let zRange = [Infinity, -Infinity]
     const zValuesLand = []
     const zValuesWater = []
-    const coastlineShadowDecoded = neGeojson.features.map((feature) => {
-      const coastline = polygonToLine(feature)
-      const coastlinePolygon = buffer(coastline, bufferIncrement, { units })
-      const georender = toGeorender(coastlinePolygon, {
-        propertyMap: function (props) {
-          return {
-            'natural': 'coastline',
-          }
-        }  
-      })
-      const decoded = decode(georender)
-      console.log({decoded})
-      decoded.area.elevation = []
-      for (let i = 0; i < decoded.area.positions.length; i += 2) {
-        const x = decoded.area.positions[i + 0]
-        const y = decoded.area.positions[i + 1]
-        const p = point([x, y])
-        const isOnLand = pointInPolygon(p, feature)
-        const nearest = nearestPointOnLine(coastline, p, { units })
-        const d = distance(p, nearest)
-        const n = d/bufferIncrement
-        const z = isOnLand ? n : -n
-        decoded.area.elevation.push(z)
-        // debug:start
-        if (z < zRange[0]) zRange[0] = z
-        if (z > zRange[1]) zRange[1] = z
-        if (isOnLand) zValuesLand.push(z)
-        else zValuesWater.push(z)
-        // debug:end
+    const zValuesCoast = []
+    const coastlineShadowDecoded = neGeojson.features.map((land) => {
+      const bothSides = []
+      const waterSideBuffer = buffer(land, bufferIncrement, { units })
+      const waterSide = difference(waterSideBuffer, land)
+      bothSides.push(waterSide)
+      const landSideBuffer = buffer(land, -bufferIncrement, { units })
+      if (landSideBuffer) {
+        const landSide = intersect(landSideBuffer, land)  
+        bothSides.push(landSide)
       }
-      return decoded
-    })
+      return [waterSide].map((coastlineSide) => {
+        const georender = toGeorender(coastlineSide, {
+          propertyMap: function (props) {
+            return {
+              'natural': 'coastline',
+            }
+          }  
+        })
+        const decoded = decode(georender)
+        console.log({decoded})
+        decoded.area.elevation = []
+        for (let i = 0; i < decoded.area.positions.length; i += 2) {
+          const x = decoded.area.positions[i + 0]
+          const y = decoded.area.positions[i + 1]
+          const p = point([x, y])
+          // const isOnLand = pointInPolygon(p, land)
+          let z = false
+          land.geometry.coordinates.forEach((ring) => {
+            z = robustPointInPolygon(ring, [x, y]) * -1
+          })
+          // console.log(isOnLand)
+          // const nearest = nearestPointOnLine(coastline, p, { units })
+          // const d = distance(p, nearest)
+          // const n = d/bufferIncrement
+          // const z = isOnLand ? n : -n
+          // const z = isOnLand ? 1 : -1
+          decoded.area.elevation.push(z)
+          // debug:start
+          if (z < zRange[0]) zRange[0] = z
+          if (z > zRange[1]) zRange[1] = z
+          if (z === 1) zValuesLand.push(z)
+          else if (z === 0) zValuesCoast.push(z)
+          else zValuesWater.push(z)
+          // debug:end
+        }
+        return decoded
+      })
+    }).reduce((accum, curr) => {
+        accum = accum.concat(curr)
+        return accum
+      }, [])
     console.log({zRange})
     const sum = (a, b) => a + b
     const zValuesLandAvg = zValuesLand.reduce(sum, 0) / zValuesLand.length
     const zValuesWaterAvg = zValuesWater.reduce(sum, 0) / zValuesWater.length
+    const zValuesCoastAvg = zValuesCoast.reduce(sum, 0) / zValuesCoast.length
     console.log('zValuesLandAvg', zValuesLandAvg)
     console.log('zValuesWater', zValuesWaterAvg)
+    console.log('zValuesCoastAvg', zValuesCoastAvg, zValuesCoast.length)
     decodedGeorender = decodedGeorender.concat(coastlineShadowDecoded)
     // coastline-shadow:end
 

@@ -26,7 +26,7 @@
 // of 1 for being inside, -1 for being outside
 // - adds sqrt fragment shader, approaches the desired effect
 // - 05
-// - adds terrain tiles with similar speckle pattern
+// - terrain?
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -50,12 +50,6 @@ const decode = require('@rubenrodriguez/georender-pack/decode')
 const featuresJSON = require('@rubenrodriguez/georender-pack/features.json')
 const getImagePixels = require('get-image-pixels')
 const makeStylesheet = require('./make-stylesheet')
-
-const searchParamsString = window.location.search.slice(1)
-const searchParams = new URLSearchParams(searchParamsString)
-const params = {
-  coastlineFade: searchParams.has('coastlineFade') ? 1 : -1
-}
 
 const colors = {
   // background: hsluv([79.9, 100.0, 94.9]).concat([255.0]),
@@ -180,17 +174,8 @@ const geoRenderShadersTick = {
       varying float vdashLength, vdashGap;
       varying vec2 vdist;
       varying vec4 vcolor;
-      varying vec2 vpos;
 
       varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
-
-      float random ( vec2 st ) {
-        return fract(
-          sin(
-            dot( st.xy, vec2( 12.9898, 78.233 ) ) * 43758.5453123
-          )
-        );
-      }
 
       void main () {
         vec2 vb = vec2(viewbox.z-viewbox.x, viewbox.w-viewbox.y);
@@ -199,7 +184,7 @@ const geoRenderShadersTick = {
         float d = vdashLength;
         float g = vdashGap;
         float x = 1.0 - step(d, mod(t, d+g));
-        float tt = 1.0 - (sin((tick + vRadiatingCoastlineBufferIndex * 40.0 + vpos.x * vpos.y * 80.0 + mod(t, 20.0) * 4.0)/40.0) * 0.5 + 0.5);
+        float tt = 1.0 - (sin((tick + vRadiatingCoastlineBufferIndex * 80.0 + mod(t, 20.0) * 4.0)/40.0) * 0.5 + 0.5);
         gl_FragColor = vec4(vcolor.xyz, vcolor.w * x * tt);
         //gl_FragColor = vec4(mix(vec3(0,1,0), vec3(1,0,0), x), 1.0);
       }
@@ -232,8 +217,6 @@ const terrainImgTileShader = {
   uniforms: {
     zindex: map.prop('zindex'),
     texture: map.prop('texture'),
-    maxElevation: 1016.1,
-    colorForeground: colors.glslForeground,
   },
   blend: {
     enable: true,
@@ -248,7 +231,6 @@ const terrainImgTileShader = {
     uniform vec2 offset;
     uniform float zindex;
     varying vec2 vtcoord;
-    varying vec2 vpos;
 
     void main () {
       vec2 p = position + offset;
@@ -259,40 +241,19 @@ const terrainImgTileShader = {
         1.0/(1.0 + zindex),
         1.0
       );
-      vpos = gl_Position.xy;
     }
   `,
   frag: `
     precision highp float;
 
     uniform sampler2D texture;
-    uniform float maxElevation;
-    uniform vec4 colorForeground;
 
     varying vec2 vtcoord;
-    varying vec2 vpos;
-
-    float random ( vec2 st ) {
-      return fract(
-        sin(
-          dot( st.xy, vec2( 12.9898, 78.233 ) ) * 43758.5453123
-        )
-      );
-    }
 
     void main () {
       vec4 tc = texture2D(texture, vtcoord);
       float z = -10000.0 + ((tc.r * 256.0 * 256.0 * 256.0 + tc.g * 256.0 * 256.0 + tc.b * 256.0) * 0.1);
-      float normalizedElevation = max(0.0, min(1.0, z / maxElevation));
-      float randomThreshold = sqrt(random(vec2(random(vpos.xy), -vpos.yx)));
-      float hiddenThreshold = 1.1 - normalizedElevation;
-      float opacity = 1.0;
-      if (randomThreshold < hiddenThreshold || normalizedElevation < 0.1) {
-        opacity = 0.0;
-      }
-      vec4 color = colorForeground;
-      gl_FragColor = vec4(color.xyz, opacity);
-      // gl_FragColor = vec4(colorForeground.rgb, normalizedElevation);
+      gl_FragColor = vec4(tc.rgb, 1.0);
     }
   `,
 }
@@ -449,7 +410,6 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
     varying float vElevation;
 
     uniform vec4 colorForeground, colorBackground;
-    uniform float coastlineFade;
 
     float random ( vec2 st ) {
       return fract(
@@ -463,14 +423,7 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
       float normalizedElevation = 1.0 - (vElevation * 0.5 + 0.5);
       float clampedElevation = min(max(0.0, normalizedElevation), 1.0);
       float randomThreshold = sqrt(random(vec2(random(vpos.xy), vpos.yx)));
-      float hiddenThreshold;
-      if (coastlineFade > 0.0) {
-        hiddenThreshold = 1.2 - normalizedElevation;  
-      }
-      else {
-        hiddenThreshold = 1.2 - random(vec2(vpos.x, normalizedElevation));  
-      }
-      
+      float hiddenThreshold = 1.0 - normalizedElevation;
       float opacity = 1.0;
       if (randomThreshold < hiddenThreshold) {
         opacity = 0.0;
@@ -484,8 +437,7 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
   }),
   uniforms: Object.assign({}, geoRenderShaders.areas.uniforms, {
     colorBackground: colors.glslBackground,
-    colorForeground: colors.glslForeground,
-    coastlineFade: params.coastlineFade,
+    colorForeground: colors.glslForeground, 
   })
 })
 

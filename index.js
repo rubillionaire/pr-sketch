@@ -1,4 +1,4 @@
-// radiating-coastline-05-wip
+// radiating-coastline-05
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with
@@ -54,7 +54,10 @@ const makeStylesheet = require('./make-stylesheet')
 const searchParamsString = window.location.search.slice(1)
 const searchParams = new URLSearchParams(searchParamsString)
 const params = {
-  coastlineFade: searchParams.has('coastlineFade') ? 1 : -1
+  coastlineFade: searchParams.has('coastlineFade') ? 1 : -1,
+  devicePixelRatio: searchParams.has('devicePixelRatio')
+    ? +searchParams.get('devicePixelRatio')
+    : window.devicePixelRatio,
 }
 
 const colors = {
@@ -70,6 +73,11 @@ colors.glslForeground = colors.foreground.map(c => c/255.0)
 
 const mix = mixmap(regl, {
   extensions: ['oes_element_index_uint'],
+  attributes: {
+    antialias: true,
+    // Ensure regl is aware of the pixel ratio
+    pixelRatio: params.devicePixelRatio,
+  },
 })
 
 const prWE = [-67.356661, -65.575714] 
@@ -232,6 +240,7 @@ const terrainImgTileShader = {
   uniforms: {
     zindex: map.prop('zindex'),
     texture: map.prop('texture'),
+    aspect: () => window.innerWidth/window.innerHeight,
     maxElevation: 1016.1,
     colorForeground: colors.glslForeground,
   },
@@ -246,6 +255,7 @@ const terrainImgTileShader = {
     attribute vec2 tcoord;
     uniform vec4 viewbox;
     uniform vec2 offset;
+    uniform float aspect;
     uniform float zindex;
     varying vec2 vtcoord;
     varying vec2 vpos;
@@ -255,7 +265,7 @@ const terrainImgTileShader = {
       vtcoord = tcoord;
       gl_Position = vec4(
         (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-        (p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0,
+        ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
         1.0/(1.0 + zindex),
         1.0
       );
@@ -292,6 +302,7 @@ const terrainImgTileShader = {
       }
       vec4 color = colorForeground;
       gl_FragColor = vec4(color.xyz, opacity);
+      // gl_FragColor = vec4(vtcoord.xy, 1.0, 1.0);
       // gl_FragColor = vec4(colorForeground.rgb, normalizedElevation);
     }
   `,
@@ -322,7 +333,7 @@ const terrainImgTileLayer = ({ drawCmd }) => {
       const id = key.split('!')[0]
       const file = key.split('!')[1]
       const level = Number(file.split('-')[0])
-      const prop = {
+      const prop = Object.assign({}, map._props()[0], {
         id,
         zindex: 1,
         texture: map.regl.texture(),
@@ -332,13 +343,19 @@ const terrainImgTileLayer = ({ drawCmd }) => {
           bbox[2], bbox[1], // nw
           bbox[2], bbox[3], // ne
         ],
-      }
+      })
       drawCmd.props.push(prop)
       // map.draw()
       resl({
         manifest: { tile: { type: 'image', src: `terrain-rgb/${file}` } },
         onDone: ({ tile }) => {
-          prop.texture = map.regl.texture(tile)
+          prop.texture = map.regl.texture({
+            data: tile,
+            width: tile.width,
+            height: tile.height,
+            minFilter: 'linear',
+            magFilter: 'linear',
+          })
           // map.draw()
         },
       })
@@ -723,10 +740,10 @@ console.log({props})
     // draw.lineFill.draw(draw.lineFill.props)
     // - continus run
     map.regl.frame(() => {
-      draw.coastlineShadow.draw(draw.coastlineShadow.props)
-      draw.lineFill.draw(draw.lineFill.props)
-      draw.terrainImgTile.draw(draw.terrainImgTile.props)
-      // map.draw()
+      // draw.coastlineShadow.draw(draw.coastlineShadow.props)
+      // draw.lineFill.draw(draw.lineFill.props)
+      // draw.terrainImgTile.draw(draw.terrainImgTile.props)
+      map.draw()
     })
   },
 })

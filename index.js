@@ -1,4 +1,4 @@
-// radiating-coastline-07
+// radiating-coastline-08-wip
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with
@@ -35,6 +35,8 @@
 // - 07
 // - tunes pixel density for height and light direction, values now align
 // with actual light crossing the equator
+// - 08
+// - night time mode?
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -78,7 +80,7 @@ const params = {
         ? parseFloat(searchParams.get('lightPosition'))
         : 'tick'
 }
-
+console.log({params})
 const colors = {
   hsluvBackground: [79.9, 100.0, 94.9].concat([255.0]),
   background: [255, 243, 135].concat([255.0]),
@@ -104,13 +106,12 @@ const prCenterX = (prWE[0] + prWE[1]) / 2
 const prCenterY = 18.220148006000038
 const prHorizontal = (prWE[1] - prWE[0])
 const prSN = [prCenterY - (prHorizontal/2), prCenterY + (prHorizontal/2)]
-console.log(prSN)
 
 const map = mix.create({
   viewbox: [prWE[0],prSN[0],prWE[1],prSN[1]],
   backgroundColor: colors.glslBackground,  
 })
-
+console.log('initial-zoom', map.getZoom())
 // setup-map:start
 let zoomer = null
 window.addEventListener('keydown', function (ev) {
@@ -250,10 +251,10 @@ const geoRenderShadersTick = {
 // we are going to rotate the phi
 let lightPositionPhi
 const lightPositionPhiTick = ({ t }) => {
-  return Math.PI * (Math.sin(t) * 0.5 + 0.5)
+  return 2 * Math.PI * (Math.sin(t) * 0.5 + 0.5)
 }
 const lightNormalizedPhi = ({ normalizedSecond }) => {
-  return ((1 * Math.PI * normalizedSecond) - 0) % (1 * Math.PI)
+  return ((2 * Math.PI * normalizedSecond) - 0) % (2 * Math.PI)
 }
 if (params.lightPosition === 'tick') {
   lightPositionPhi = lightPositionPhiTick
@@ -304,15 +305,13 @@ const terrainImgTileShader = {
     },
     lightPosition: ({ tick }) => {
       const radius = [2000, 2000, 2000]
-      // const radius = [180, 1, 2000]
       const t = tick / 100
       const theta = Math.PI / 2
       const phi = lightPositionPhi({ t })
       const x = radius[0] * Math.sin(theta) * Math.cos(phi)
       const y = radius[1] * Math.sin(theta) * Math.sin(phi)
       const z = radius[2] * Math.cos(theta)
-      if (tick < 12) console.log(x, y, z)
-      // console.log(radius[2], phi, z)
+      if (tick < 220) console.log(x, y, z)
       return [x, y, z]
     },
     lightAmbientAmount: 0.2,
@@ -332,6 +331,7 @@ const terrainImgTileShader = {
     uniform float zindex;
     varying vec2 vtcoord;
     varying vec2 vpos;
+    varying vec2 vPosLonLat;
 
     void main () {
       vec2 p = position + offset;
@@ -343,6 +343,7 @@ const terrainImgTileShader = {
         1.0
       );
       vpos = gl_Position.xy;
+      vPosLonLat = position.xy;
     }
   `,
   frag: glsl`
@@ -358,6 +359,7 @@ const terrainImgTileShader = {
 
     varying vec2 vtcoord;
     varying vec2 vpos;
+    varying vec2 vPosLonLat;
 
     const float minElevation = 0.0386;
     // const float minElevation = 0.15;
@@ -377,9 +379,7 @@ const terrainImgTileShader = {
     }
 
     vec3 calculateNormal(vec2 texCoords) {
-      float left = texelToElevation(
-        texture2D(heightMap, texCoords - vec2(texelSize.x, 0.0)).xyz
-      );
+      float left = texelToElevation(texture2D(heightMap, texCoords - vec2(texelSize.x, 0.0)).xyz);
       float right = texelToElevation(texture2D(heightMap, texCoords + vec2(texelSize.x, 0.0)).xyz);
       float bottom = texelToElevation(texture2D(heightMap, texCoords - vec2(0.0, texelSize.y)).xyz);
       float top = texelToElevation(texture2D(heightMap, texCoords + vec2(0.0, texelSize.y)).xyz);
@@ -394,22 +394,54 @@ const terrainImgTileShader = {
     void main () {
       float z = texelToElevation(texture2D(heightMap, vtcoord).xyz);
       float normalizedElevation = max(0.0, min(1.0, z / maxElevation));
-      if (lightPosition.z < 0.0 && normalizedElevation > minElevation) {
+
+      // [-180, 180] => [0, 360]
+      float normalizedPosLon = mod(vPosLonLat.x + 360.0, 360.0);
+
+      // these are normalized to [0, 360] as well
+      vec2 daylightRange = vec2(
+        mod(lightPosition.x + 360.0 - 90.0, 360.0),
+        mod(lightPosition.x + 360.0 + 90.0, 360.0)
+      );
+
+      float isDaylightN = 1.0;
+      float isDaylight = 0.0;
+      // if (daylightRange.x < daylightRange.y) {
+      //   // isDaylight = 1 if in daylight
+      //   isDaylight = step(daylightRange.x, normalizedPosLon) *
+      //     step(normalizedPosLon, daylightRange.y);
+      // }
+      // else {
+      //   // the range wraps around the 0/360 point
+      //   // isDaylight < 0.5 or > 1.5 if in daylight
+      //   float isDaylightCombined = step(normalizedPosLon, daylightRange.x) +
+      //     step(normalizedPosLon, daylightRange.y);
+      //   // becomes 1.0 if normalizedPosLon is whtin the wraparound range 
+      //   if (isDaylightCombined < 0.5 || isDaylightCombined > 1.5) {
+      //     isDaylight = 1.0;
+      //   }
+      // }
+
+      if (isDaylightN < 0.5 &&
+          (normalizedElevation > minElevation)) {
+        // terrain during night
         vec4 color = colorForeground;
         gl_FragColor = vec4(hsluv(color.xyz), 1.0);
       }
-      else if (lightPosition.z < 0.0 && normalizedElevation >= minElevation) {
+      else if (normalizedElevation <= minElevation) {
+        // ocean during night
         vec4 color = colorBackground;
         gl_FragColor = vec4(hsluv(color.xyz), 1.0);
       }
       else {
+        // terrain during day
         vec3 position = vec3(vpos, z);
         vec3 positionNormal = calculateNormal(vtcoord);
         vec3 lightDirection = normalize(lightPosition - position);
         // we invert the lightness factor for our visualization
         float lightnessFactor = dot(positionNormal, lightDirection) * -1.0;
         float lightDiffuseAmount = max(lightnessFactor, 0.0);
-        float lightAmount = lightAmbientAmount + lightDiffuseAmount;
+        float lightAmount = clamp(lightAmbientAmount + lightDiffuseAmount, 0.0, 1.0);
         float randomThreshold = sqrt(random(vec2(random(vpos.xy), -vpos.yx)));
         float hiddenThreshold = 1.0 - lightAmount;
         float opacity = 1.0;
@@ -626,7 +658,6 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
   })
 })
 
-console.log (coastlineShadowShader)
 var includeAllTags = true
 var includeIsland = false
 const bufferCount = 14
@@ -711,7 +742,6 @@ resl({
     const zValuesWater = []
     const zValuesCoast = []
     const coastlineShadowDecoded = neGeojson.features.map((land) => {
-      console.log('land.geometry.coordinates.length', land.geometry.coordinates[0].length)
       const bothSides = []
       const waterSideBuffer = buffer(land, bufferIncrement, { units })
       const waterSide = difference(waterSideBuffer, land)
@@ -730,7 +760,6 @@ resl({
           }  
         })
         const decoded = decode(georender)
-        console.log({decoded})
         decoded.area.elevation = []
         for (let i = 0; i < decoded.area.positions.length; i += 2) {
           const x = decoded.area.positions[i + 0]
@@ -773,18 +802,13 @@ resl({
         accum = accum.concat(curr)
         return accum
       }, [])
-    console.log({zRange})
     const sum = (a, b) => a + b
     const zValuesLandAvg = zValuesLand.reduce(sum, 0) / zValuesLand.length
     const zValuesWaterAvg = zValuesWater.reduce(sum, 0) / zValuesWater.length
     const zValuesCoastAvg = zValuesCoast.reduce(sum, 0) / zValuesCoast.length
-    console.log('zValuesLandAvg', zValuesLandAvg, zValuesLand.length)
-    console.log('zValuesWater', zValuesWaterAvg, zValuesWater.length)
-    console.log('zValuesCoastAvg', zValuesCoastAvg, zValuesCoast.length)
     decodedGeorender = decodedGeorender.concat(coastlineShadowDecoded)
     // coastline-shadow:end
 
-console.log({decodedGeorender})
     const stylesheet = {
       'natural.other': {
         'area-fill-color': colors.cssBackground,

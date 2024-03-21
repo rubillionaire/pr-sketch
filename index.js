@@ -36,7 +36,7 @@
 // - tunes pixel density for height and light direction, values now align
 // with actual light crossing the equator
 // - 08
-// - night time mode wip
+// - sorts out proper light model to also account for night mode
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -285,7 +285,7 @@ else if (isFloat(params.lightPosition)) {
     return lightNormalizedPhi({ normalizedSecond })
   }
   lightLonT = ({ t }) => {
-    return params.lightPosition * 360 -  180
+    return params.lightPosition * 360 - 180
   }
 }
 const terrainImgTileShader = {

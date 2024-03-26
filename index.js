@@ -1,4 +1,4 @@
-// radiating-coastline-09
+// radiating-coastline-10-wip
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with
@@ -41,6 +41,9 @@
 // - adds blending from full lightness to full darkness
 // - improves lighting effect by inverting the x component of the light
 // in order to get the appropriate density effect for our shadows
+// - 10
+// - simplify the random calls, using glsl-random
+// - wip, add city centers with population
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -64,6 +67,7 @@ const decode = require('@rubenrodriguez/georender-pack/decode')
 const featuresJSON = require('@rubenrodriguez/georender-pack/features.json')
 const getImagePixels = require('get-image-pixels')
 const makeStylesheet = require('./make-stylesheet')
+const cityJson = require('./util/pr-cities-population-2024.json')
 
 const isFloat = (n) => {
   return typeof parseFloat(n) === 'number'
@@ -248,7 +252,7 @@ const geoRenderShadersTick = {
   })
 }
 
-// terrain-img:start
+// globalContext:start
 // light position in sphereical coordinates
 // r is the radius
 // theta is the polar angle (y) - [0, pi]
@@ -274,6 +278,27 @@ else if (isFloat(params.lightPosition)) {
     return -params.lightPosition * 360
   }
 }
+const lightPositionTick = ({ tick }) => {
+  const radius = [2000, 2000, 2000]
+  const t = tick/10
+  const lightLon = lightLonT({ t })
+  const lightLat = 0
+  const deg2rad = Math.PI/180
+  const lightLonRad = lightLon * deg2rad
+  const lightLatRad = lightLat * deg2rad
+  const x = radius[0] * Math.cos(lightLatRad) * Math.cos(lightLonRad)
+  const y = radius[1] * Math.cos(lightLatRad) * Math.sin(lightLonRad)
+  const z = radius[2] * Math.sin(lightLatRad)
+  if (tick < 220) console.log(x, y, z)
+  return [x, y, z]
+}
+const globalContext = {
+  lightPosition: lightPositionTick({ tick: 0 }),
+  lightAmbientAmount: 0.2,
+}
+// globalContext:end
+
+// terrain-img:start
 const terrainImgTileShader = {
   attributes: {
     position: map.prop('points'),
@@ -301,21 +326,8 @@ const terrainImgTileShader = {
       if (width && height) return [1/width, 1/height]
       return [0, 0]
     },
-    lightPosition: ({ tick }) => {
-      const radius = [2000, 2000, 2000]
-      const t = tick/10
-      const lightLon = lightLonT({ t })
-      const lightLat = 0
-      const deg2rad = Math.PI/180
-      const lightLonRad = lightLon * deg2rad
-      const lightLatRad = lightLat * deg2rad
-      const x = radius[0] * Math.cos(lightLatRad) * Math.cos(lightLonRad)
-      const y = radius[1] * Math.cos(lightLatRad) * Math.sin(lightLonRad)
-      const z = radius[2] * Math.sin(lightLatRad)
-      if (tick < 220) console.log(x, y, z)
-      return [x, y, z]
-    },
-    lightAmbientAmount: 0.2,
+    lightPosition: () => globalContext.lightPosition,
+    lightAmbientAmount: () => globalContext.lightAmbientAmount,
   },
   blend: {
     enable: true,
@@ -366,20 +378,8 @@ const terrainImgTileShader = {
     // const float minElevation = 0.15;
     
     #pragma glslify: hsluv = require('glsl-hsluv/hsluv-to-rgb')
-
-    float random ( vec2 st ) {
-      return fract(
-        sin(
-          dot( st.xy, vec2( 12.9898, 78.233 ) ) * 43758.5453123
-        )
-      );
-    }
-
-    float hash (vec3 p) {
-      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
-      return fract(sin(dot(p, vec3(1.0, 1.1, 1.2))) * 43758.5453);
-    }
-
+    #pragma glslify: random = require('glsl-random')
+    #pragma glslify: lonLatToSphere = require('./util/lon-lat-to-sphere.glsl')
 
     float texelToElevation (vec3 texel) {
       return -10000.0 + ((texel.r * 256.0 * 256.0 * 256.0 + texel.g * 256.0 * 256.0 + texel.b * 256.0) * 0.1);
@@ -398,24 +398,6 @@ const terrainImgTileShader = {
       return normalize(cross(va, vb));
     }
 
-    vec3 lonLatTo3D (vec2 lonLat) {
-      float lon = radians(lonLat.x);
-      float lat = radians(lonLat.y);
-      float x = cos(lat) * cos(lon);
-      float y = cos(lat) * sin(lon);
-      float z = sin(lat);
-      return vec3(x, y, z);
-    }
-
-    vec3 lonLatTo3D (vec3 lonLat) {
-      float lon = radians(lonLat.x);
-      float lat = radians(lonLat.y);
-      float x = cos(lat) * cos(lon);
-      float y = cos(lat) * sin(lon);
-      float z = sin(lat) * lonLat.z;
-      return vec3(x, y, z);
-    }
-
     // transform original from [min, max] => [0, 1]
     float transformRange (float original, float min, float max) {
       return (original - min) / (max - min);
@@ -428,13 +410,13 @@ const terrainImgTileShader = {
         gl_FragColor = vec4(0.0);
         return;
       }
-      vec3 positionSphere = lonLatTo3D(vPosLonLat);
+      vec3 positionSphere = lonLatToSphere(vPosLonLat);
       vec3 lightDirectionSphere = normalize(lightPosition - positionSphere);
       float dotSphereLight = dot(positionSphere, lightDirectionSphere);
       vec3 position = vec3(vpos, z);
       vec3 positionNormal = calculateNormal(vtcoord);
       // vec3 lightDirection = normalize(lightPosition - position);
-      vec3 lightDirection = normalize(lightPosition - lonLatTo3D(position));
+      vec3 lightDirection = normalize(lightPosition - lonLatToSphere(position));
       float dotPositionLight = dot(positionNormal, lightDirection * vec3(-1., 1., 1.));
       float lightDiffuseAmount = max(dotPositionLight, 0.0);
       float lightAmount = clamp(lightAmbientAmount + lightDiffuseAmount, 0.0, 1.0);
@@ -460,12 +442,13 @@ const terrainImgTileShader = {
       }
       float opacity = 1.0;
       // float opacity = min(1.0, normalizedElevation + 0.3);
-      float randomThreshold = sqrt(random(vec2(random(vpos.xy), vec2(vpos.yx))));
+      float randomThreshold = sqrt(random(position.xy));
       if (randomThreshold < hiddenThreshold || normalizedElevation < minElevation) {
         opacity = 0.0;
       }
       // offset our elevation into a smaller range that prefers the foreground color
-      vec3 color = mix(colorForeground.xyz - vec3(0., 0., 30.0), colorForeground.xyz, normalizedElevation);
+      // vec3 color = mix(colorForeground.xyz - vec3(0., 0., -30.0), colorForeground.xyz, normalizedElevation);
+      vec3 color = colorForeground.xyz;
       // vec4 color = mix(colorBackground, colorForeground, 1.0);
       gl_FragColor = vec4(hsluv(color.xyz), opacity);
     }
@@ -535,6 +518,14 @@ const terrainImgTileLayer = ({ drawCmd }) => {
 // terrain-img:end
 
 const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
+  attributes: Object.assign({}, geoRenderShaders.areas.attributes, {
+    elevation: map.prop('elevation'),
+  }),
+  uniforms: Object.assign({}, geoRenderShaders.areas.uniforms, {
+    colorForeground: colors.hsluvForeground,
+    coastlineFade: params.coastlineFade,
+    lightPosition: () => globalContext.lightPosition,
+  }),
   vert: glsl`
     precision highp float;
     struct Area {
@@ -608,6 +599,7 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
     varying vec2 vpos;
     varying vec4 vcolor;
     varying float vElevation;
+    varying vec2 vPosLonLat;
     void main () {
       vft = featureType;
       Area area = readArea(styleTexture, featureType, zoom, texSize);
@@ -621,53 +613,66 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
         1.0/(1.0+zindex), 1);
       vpos = gl_Position.xy;
       vElevation = elevation;
+      vPosLonLat = position;
     }
   `,
-  frag: `
+  frag: glsl`
     precision highp float;
     varying vec4 vcolor;
     varying vec2 vpos;
     varying float vElevation;
+    varying vec2 vPosLonLat;
 
-    uniform vec4 colorForeground, colorBackground;
+    uniform vec3 lightPosition;
+    uniform vec4 colorForeground;
     uniform float coastlineFade;
 
-    float random ( vec2 st ) {
-      return fract(
-        sin(
-          dot( st.xy, vec2( 12.9898, 78.233 ) ) * 43758.5453123
-        )
-      );
-    }
+    #pragma glslify: hsluv = require('glsl-hsluv/hsluv-to-rgb')
+    #pragma glslify: lonLatToSphere = require('./util/lon-lat-to-sphere.glsl')
+    #pragma glslify: random = require('glsl-random')
 
     void main () {
+      vec3 positionSphere = lonLatToSphere(vPosLonLat);
+      vec3 lightDirectionSphere = normalize(lightPosition - positionSphere);
+      float dotSphereLight = dot(positionSphere, lightDirectionSphere);
       float normalizedElevation = 1.0 - (vElevation * 0.5 + 0.5);
       float clampedElevation = min(max(0.0, normalizedElevation), 1.0);
       float randomThreshold = sqrt(random(vec2(random(vpos.xy), vpos.yx)));
       float hiddenThreshold;
+
+      // we don't really use this because the precision isn't great atm so maybe
+      // we remove it? precision might be higher if we do our geoprocessing
+      // (finding the coastline geometry)
       if (coastlineFade > 0.0) {
         hiddenThreshold = 1.2 - normalizedElevation;  
       }
       else {
-        hiddenThreshold = 1.2 - random(vec2(vpos.x, normalizedElevation));  
+        hiddenThreshold = 1.2 - random(vec2(vpos.x, normalizedElevation));
+      }
+
+      float transitionBuffer = 0.2;
+      if (dotSphereLight < -transitionBuffer) {
+        // dark
+        hiddenThreshold = 0.0;
+      }
+      else if (dotSphereLight > -transitionBuffer && dotSphereLight < 0.0) {
+        // transitioning
+        float transitionFactor = smoothstep(0.0, -transitionBuffer, dotSphereLight);
+        hiddenThreshold = hiddenThreshold * transitionFactor * -1.0 - 0.2;
+      }
+      else if (dotSphereLight > 0.0 && dotSphereLight < transitionBuffer) {
+        float transitionFactor = smoothstep(0.0, transitionBuffer, dotSphereLight);
+        hiddenThreshold = hiddenThreshold * transitionFactor * +1.0 - 0.2;
       }
       
       float opacity = 1.0;
       if (randomThreshold < hiddenThreshold) {
         opacity = 0.0;
       }
-      vec4 color = colorForeground;
+      vec3 color = hsluv(colorForeground.xyz);
       gl_FragColor = vec4(color.xyz, opacity);
     }
   `,
-  attributes: Object.assign({}, geoRenderShaders.areas.attributes, {
-    elevation: map.prop('elevation'),
-  }),
-  uniforms: Object.assign({}, geoRenderShaders.areas.uniforms, {
-    colorBackground: colors.glslBackground,
-    colorForeground: colors.glslForeground,
-    coastlineFade: params.coastlineFade,
-  })
 })
 
 var includeAllTags = true
@@ -891,15 +896,25 @@ console.log({props})
       draw.coastlineShadow.props,
       Object.assign({}, map._props()[0])
     )
-    // - single run
+
+    // - single run as draw individual commands
     // draw.coastlineShadow.draw(draw.coastlineShadow.props)
     // draw.lineFill.draw(draw.lineFill.props)
+    // draw.terrainImgTile.draw(draw.terrainImgTile.props)
     // - continus run
-    map.regl.frame(() => {
-      // draw.coastlineShadow.draw(draw.coastlineShadow.props)
+    let frame = map.regl.frame(({ tick }) => {
+      globalContext.lightPosition = lightPositionTick({ tick })
+
       // draw.lineFill.draw(draw.lineFill.props)
+      // draw.coastlineShadow.draw(draw.coastlineShadow.props)
       // draw.terrainImgTile.draw(draw.terrainImgTile.props)
       map.draw()
+
+      // if (frame && tick > 100) {
+      //   console.log('draw.terrainImgTile.props')
+      //   console.log(draw.terrainImgTile.props[0].lightPosition)
+      //   frame.cancel()
+      // }
     })
   },
 })

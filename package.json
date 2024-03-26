@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "browserify index.js -o public/bundle.js -t glslify",
     "dev:serve": "serve public",
-    "dev:watch": "watchify index.js -o public/bundle.js -t glslify",
+    "dev:watch": "watchify index.js -o public/bundle.js -t glslify -v",
     "dev": "run-p dev:*",
     "start": "budo index.js --dir public/ --live -- -t glslify"
   },
@@ -41,6 +41,7 @@
     "glsl-hsl2rgb": "^1.1.0",
     "glsl-hsluv": "^1.0.0",
     "glsl-noise": "^0.0.0",
+    "glsl-random": "^0.0.5",
     "glslify": "^7.1.1",
     "hsluv": "^1.0.1",
     "mixmap": "^1.6.0",

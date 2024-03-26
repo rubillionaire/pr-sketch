@@ -43,7 +43,9 @@
 // in order to get the appropriate density effect for our shadows
 // - 10
 // - simplify the random calls, using glsl-random
-// - wip, add city centers with population
+// - blend coastline transition from day to night on coastline
+// - adds "ocean" shader to do a background transition as well
+// - blend radiating coastline ripple with night mode
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -168,90 +170,6 @@ document.body.appendChild(map.render({
   height: window.innerHeight,
 }))
 
-
-const geoRenderShaders = shaders(map)
-const geoRenderShadersTick = {
-  lineFill: Object.assign({}, geoRenderShaders.lineFill, {
-    vert: glsl`
-      precision highp float;
-      #pragma glslify: Line = require('glsl-georender-style-texture/line.h');
-      #pragma glslify: readLine = require('glsl-georender-style-texture/line.glsl');
-      attribute vec2 position, normal, dist;
-      attribute float featureType, index;
-      attribute float radiatingCoastlineBufferIndex, radiatingCoastlineBufferDistance;
-      uniform vec4 viewbox;
-      uniform vec2 offset, size;
-      uniform float featureCount, aspect, zoom;
-      uniform sampler2D styleTexture;
-      varying float vft, vindex, zindex, vdashLength, vdashGap;
-      varying vec2 vpos, vnorm, vdist;
-      varying vec4 vcolor;
-      varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
-      void main () {
-        vft = featureType;
-        Line line = readLine(styleTexture, featureType, zoom, featureCount);
-        vcolor = line.fillColor;
-        vdashLength = line.fillDashLength;
-        vdashGap = line.fillDashGap;
-        vindex = index;
-        zindex = line.zindex + 0.1;
-        vec2 p = position.xy + offset;
-        vnorm = normalize(normal)*(line.fillWidth/size);
-        vdist = dist;
-        gl_Position = vec4(
-          (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-          ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
-          1.0/(1.0+zindex), 1);
-        gl_Position += vec4(vnorm, 0, 0);
-        vpos = gl_Position.xy;
-        vRadiatingCoastlineBufferIndex = radiatingCoastlineBufferIndex;
-        vRadiatingCoastlineBufferDistance = radiatingCoastlineBufferDistance;
-      }
-    `,
-    frag: `
-      precision highp float;
-
-      uniform vec4 viewbox;
-      uniform vec2 size;
-      uniform float aspect;
-      uniform float tick;
-      varying float vdashLength, vdashGap;
-      varying vec2 vdist;
-      varying vec4 vcolor;
-      varying vec2 vpos;
-
-      varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
-
-      float random ( vec2 st ) {
-        return fract(
-          sin(
-            dot( st.xy, vec2( 12.9898, 78.233 ) ) * 43758.5453123
-          )
-        );
-      }
-
-      void main () {
-        vec2 vb = vec2(viewbox.z-viewbox.x, viewbox.w-viewbox.y);
-        vec2 s = vec2(size.x, size.y*aspect);
-        float t = length(vdist*s/vb);
-        float d = vdashLength;
-        float g = vdashGap;
-        float x = 1.0 - step(d, mod(t, d+g));
-        float tt = 1.0 - (sin((tick + vRadiatingCoastlineBufferIndex * 40.0 + vpos.x * vpos.y * 80.0 + mod(t, 20.0) * 4.0)/40.0) * 0.5 + 0.5);
-        gl_FragColor = vec4(vcolor.xyz, vcolor.w * x * tt);
-        //gl_FragColor = vec4(mix(vec3(0,1,0), vec3(1,0,0), x), 1.0);
-      }
-    `,
-    uniforms: Object.assign({}, geoRenderShaders.lineFill.uniforms, {
-      tick: map.regl.context('tick'),
-    }),
-    attributes: Object.assign({}, geoRenderShaders.lineFill.attributes, {
-      radiatingCoastlineBufferIndex: map.prop('radiatingCoastlineBufferIndex'),
-      radiatingCoastlineBufferDistance: map.prop('radiatingCoastlineBufferDistance'),
-    }),
-  })
-}
-
 // globalContext:start
 // light position in sphereical coordinates
 // r is the radius
@@ -297,6 +215,160 @@ const globalContext = {
   lightAmbientAmount: 0.2,
 }
 // globalContext:end
+
+
+const geoRenderShaders = shaders(map)
+const geoRenderShadersTick = {
+  lineFill: Object.assign({}, geoRenderShaders.lineFill, {
+    uniforms: Object.assign({}, geoRenderShaders.lineFill.uniforms, {
+      tick: map.regl.context('tick'),
+      lightPosition: () => globalContext.lightPosition,
+    }),
+    attributes: Object.assign({}, geoRenderShaders.lineFill.attributes, {
+      radiatingCoastlineBufferIndex: map.prop('radiatingCoastlineBufferIndex'),
+      radiatingCoastlineBufferDistance: map.prop('radiatingCoastlineBufferDistance'),
+    }),
+    vert: glsl`
+      precision highp float;
+      #pragma glslify: Line = require('glsl-georender-style-texture/line.h');
+      #pragma glslify: readLine = require('glsl-georender-style-texture/line.glsl');
+      attribute vec2 position, normal, dist;
+      attribute float featureType, index;
+      attribute float radiatingCoastlineBufferIndex, radiatingCoastlineBufferDistance;
+      uniform vec4 viewbox;
+      uniform vec2 offset, size;
+      uniform float featureCount, aspect, zoom;
+      uniform sampler2D styleTexture;
+      varying float vft, vindex, zindex, vdashLength, vdashGap;
+      varying vec2 vpos, vnorm, vdist;
+      varying vec4 vcolor;
+      varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
+      varying vec2 vPosLonLat;
+      void main () {
+        vft = featureType;
+        Line line = readLine(styleTexture, featureType, zoom, featureCount);
+        vcolor = line.fillColor;
+        vdashLength = line.fillDashLength;
+        vdashGap = line.fillDashGap;
+        vindex = index;
+        zindex = line.zindex + 0.1;
+        vec2 p = position.xy + offset;
+        vnorm = normalize(normal)*(line.fillWidth/size);
+        vdist = dist;
+        gl_Position = vec4(
+          (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
+          ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
+          1.0/(1.0+zindex), 1);
+        gl_Position += vec4(vnorm, 0, 0);
+        vpos = gl_Position.xy;
+        vRadiatingCoastlineBufferIndex = radiatingCoastlineBufferIndex;
+        vRadiatingCoastlineBufferDistance = radiatingCoastlineBufferDistance;
+        vPosLonLat = position;
+      }
+    `,
+    frag: glsl`
+      precision highp float;
+
+      #pragma glslify: lonLatToSphere = require('./util/lon-lat-to-sphere.glsl')
+      #pragma glslify: random = require('glsl-random')
+
+      uniform vec4 viewbox;
+      uniform vec2 size;
+      uniform float aspect;
+      uniform float tick;
+      uniform vec3 lightPosition;
+      varying float vdashLength, vdashGap;
+      varying vec2 vdist;
+      varying vec4 vcolor;
+      varying vec2 vpos;
+      varying vec2 vPosLonLat;
+      varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
+
+      void main () {
+        vec3 positionSphere = lonLatToSphere(vPosLonLat);
+        vec3 lightDirectionSphere = normalize(lightPosition - positionSphere);
+        float dotSphereLight = dot(positionSphere, lightDirectionSphere);
+        vec2 vb = vec2(viewbox.z-viewbox.x, viewbox.w-viewbox.y);
+        vec2 s = vec2(size.x, size.y*aspect);
+        float t = length(vdist*s/vb);
+        float d = vdashLength;
+        float g = vdashGap;
+        float x = 1.0 - step(d, mod(t, d+g));
+        float tt = 1.0 - (sin((tick + vRadiatingCoastlineBufferIndex * 40.0 + vpos.x * vpos.y * 80.0 + mod(t, 20.0) * 4.0)/40.0) * 0.5 + 0.5);
+        gl_FragColor = vec4(vcolor.xyz, vcolor.w * x * tt);
+        //gl_FragColor = vec4(mix(vec3(0,1,0), vec3(1,0,0), x), 1.0);
+      }
+    `,
+  })
+}
+
+const oceanShader = {
+  attributes: {
+    position: [
+      -180, -90,
+      -180, 90,
+      180, 90,
+      180, -90,
+    ],
+  },
+  elements: [
+    0, 1, 2,
+    1, 2, 3
+  ],
+  uniforms: {
+    viewbox: map.prop('viewbox'),
+    offset: map.prop('offset'),
+    aspect: function (context) {
+      return context.viewportWidth / context.viewportHeight
+    },
+    zindex: 0.1,
+    colorBackground: colors.hsluvBackground,
+    colorForeground: colors.hsluvForeground,
+    lightPosition: () => globalContext.lightPosition,
+  },
+  vert: `
+    precision highp float;
+
+    attribute vec2 position;
+    uniform vec4 viewbox;
+    uniform vec2 offset;
+    uniform float aspect, zindex;
+    varying vec2 vPosLonLat;
+
+    void main () {
+      vec2 p = position.xy + offset;
+      gl_Position = vec4(
+        (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
+        ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
+        1.0/(1.0+zindex), 1);
+      vPosLonLat = position;
+    }
+  `,
+  frag: glsl`
+    precision highp float;
+
+    uniform vec4 colorForeground, colorBackground;
+    uniform vec3 lightPosition;
+    varying vec2 vPosLonLat;
+
+    #pragma glslify: hsluv = require('glsl-hsluv/hsluv-to-rgb')
+    #pragma glslify: lonLatToSphere = require('./util/lon-lat-to-sphere.glsl')
+    #pragma glslify: random = require('glsl-random')
+
+    void main () {
+      vec3 positionSphere = lonLatToSphere(vPosLonLat);
+      vec3 lightDirectionSphere = normalize(lightPosition - positionSphere);
+      float dotSphereLight = dot(positionSphere, lightDirectionSphere); 
+
+      vec3 colorHsluv = colorBackground.xyz;
+      if (dotSphereLight < 0.0) {
+        colorHsluv = colorForeground.xyz;
+      }
+      vec3 color = hsluv(colorHsluv);
+      gl_FragColor = vec4(color.xyz, 1.0);
+    }
+  `,
+}
 
 // terrain-img:start
 const terrainImgTileShader = {
@@ -690,6 +762,7 @@ resl({
   onDone: async ({ neGeojson }) => {
 
     const draw = {
+      ocean: map.createDraw(oceanShader),
       area: map.createDraw(geoRenderShaders.areas),
       coastlineShadow: map.createDraw(coastlineShadowShader),
       terrainImgTile: map.createDraw(terrainImgTileShader),
@@ -895,6 +968,10 @@ console.log({props})
     setProps(
       draw.coastlineShadow.props,
       Object.assign({}, map._props()[0])
+    )
+    setProps(
+      draw.ocean.props,
+      Object.assign, map._props()[0]
     )
 
     // - single run as draw individual commands

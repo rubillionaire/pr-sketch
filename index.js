@@ -426,6 +426,8 @@ const cityShader = {
     maxPopulation: map.prop('maxPopulation'),
     colorLights: colors.hsluvBackground,
     tick: ({ tick }) => tick,
+    transitionBuffer: 0.2,
+    lightPosition: () => globalContext.lightPosition,
   },
   blend: {
     enable: true,
@@ -463,6 +465,8 @@ const cityShader = {
     uniform vec4 colorLights;
     uniform float maxPopulation;
     uniform float tick;
+    uniform float transitionBuffer;
+    uniform vec3 lightPosition;
     varying vec2 vpos;
     varying vec2 vanchor;
     varying float vpopulation;
@@ -472,16 +476,21 @@ const cityShader = {
     #pragma glslify: lonLatToSphere = require('./util/lon-lat-to-sphere.glsl')
 
     void main () {
+      vec3 positionSphere = lonLatToSphere(vpos);
+      vec3 lightDirectionSphere = normalize(lightPosition - positionSphere);
+      float dotSphereLight = dot(positionSphere, lightDirectionSphere);
       float dist = distance(vanchor, vpos);
       float radius = dimensions.x;
       float hiddenThreshold = clamp(dist/radius, 0.0, 1.0);
       float pop = clamp(vpopulation / maxPopulation, 0.0, 1.0);
-      float popFactor = mix(0.2, 0.4, pop);
+      float popBaseRadius = mix(0.2, 0.4, pop);
+      float popFluxFactor = mix(0.1, 0.2, pop);
+      float popLightFactor = smoothstep(transitionBuffer, -transitionBuffer, dotSphereLight);
       float r = random(vpos.xy);
-      float popFlux = sin((tick + r * 1000.0)/100.0) * 0.2;
-      float randomThreshold = sqrt(r) * (popFactor + popFlux);
+      float popFlux = sin((tick + r * 1000.0)/100.0) * popFluxFactor;
+      float randomThreshold = sqrt(r) * (popBaseRadius + popFlux) * popLightFactor;
       float opacity = 1.0;
-      if (randomThreshold < hiddenThreshold) {
+      if (dotSphereLight > 0.0 || randomThreshold < hiddenThreshold) {
         opacity = 0.0;
       }
       gl_FragColor = vec4(hsluv(colorLights.xyz), opacity);

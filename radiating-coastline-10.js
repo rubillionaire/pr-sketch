@@ -1,4 +1,4 @@
-// radiating-coastline-11-wip
+// radiating-coastline-10
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with
@@ -46,8 +46,6 @@
 // - blend coastline transition from day to night on coastline
 // - adds "ocean" shader to do a background transition as well
 // - flip radiating coastline ripple with day/night mode
-// - 11
-// ? adds night city lights
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')

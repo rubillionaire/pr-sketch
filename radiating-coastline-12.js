@@ -491,7 +491,7 @@ const cityShader = {
       float popFluxFactor = mix(0.1, 0.2, pop);
       float popLightFactor = smoothstep(lightTransitionBuffer, -lightTransitionBuffer, dotSphereLight);
       float r = random(vpos.xy);
-      float popFlux = sin((tick + r * 1000.0)/100.0) * popFluxFactor;
+      float popFlux = sin((tick + r * 1000.0)/10.0) * popFluxFactor;
       float randomThreshold = sqrt(r) * (popBaseRadius + popFlux) * popLightFactor;
       float opacity = 1.0;
       if (dotSphereLight > 0.0 || randomThreshold < hiddenThreshold) {

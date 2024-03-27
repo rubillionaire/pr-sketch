@@ -1,4 +1,4 @@
-// radiating-coastline-11
+// radiating-coastline-12
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with
@@ -48,6 +48,8 @@
 // - flip radiating coastline ripple with day/night mode
 // - 11
 // - adds night city lights first draft, not timed with light position yet
+// - 12
+// - full night day cycle for city shader
 const mixmap = require('mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -489,7 +491,7 @@ const cityShader = {
       float popFluxFactor = mix(0.1, 0.2, pop);
       float popLightFactor = smoothstep(lightTransitionBuffer, -lightTransitionBuffer, dotSphereLight);
       float r = random(vpos.xy);
-      float popFlux = sin((tick + r * 1000.0)/100.0) * popFluxFactor;
+      float popFlux = sin((tick + r * 1000.0)/10.0) * popFluxFactor;
       float randomThreshold = sqrt(r) * (popBaseRadius + popFlux) * popLightFactor;
       float opacity = 1.0;
       if (dotSphereLight > 0.0 || randomThreshold < hiddenThreshold) {

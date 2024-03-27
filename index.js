@@ -217,12 +217,13 @@ const lightPositionTick = ({ tick }) => {
   const x = radius[0] * Math.cos(lightLatRad) * Math.cos(lightLonRad)
   const y = radius[1] * Math.cos(lightLatRad) * Math.sin(lightLonRad)
   const z = radius[2] * Math.sin(lightLatRad)
-  if (tick < 220) console.log(x, y, z)
+  // if (tick < 220) console.log(x, y, z)
   return [x, y, z]
 }
 const globalContext = {
   lightPosition: lightPositionTick({ tick: 0 }),
   lightAmbientAmount: 0.2,
+  lightTransitionBuffer: 0.2,
 }
 // globalContext:end
 
@@ -351,6 +352,7 @@ const oceanShader = {
     colorBackground: colors.hsluvBackground,
     colorForeground: colors.hsluvForeground,
     lightPosition: () => globalContext.lightPosition,
+    lightTransitionBuffer: globalContext.lightTransitionBuffer,
   },
   blend: {
     enable: true,
@@ -379,6 +381,7 @@ const oceanShader = {
 
     uniform vec4 colorForeground, colorBackground;
     uniform vec3 lightPosition;
+    uniform float lightTransitionBuffer;
     varying vec2 vPosLonLat;
 
     #pragma glslify: hsluv = require('glsl-hsluv/hsluv-to-rgb')
@@ -390,15 +393,14 @@ const oceanShader = {
       vec3 lightDirectionSphere = normalize(lightPosition - positionSphere);
       float dotSphereLight = dot(positionSphere, lightDirectionSphere); 
 
-      float transitionBuffer = 0.2;
       // hidden threashold of
       // 0 means color is fully on
       // 1 means color is fully off
       // we have a primary color, which we want to be fully on
-      float hiddenThreshold = smoothstep(-transitionBuffer, transitionBuffer, dotSphereLight);
+      float hiddenThreshold = smoothstep(-lightTransitionBuffer, lightTransitionBuffer, dotSphereLight);
 
       vec3 colorHsluv = colorForeground.xyz;
-      if (dotSphereLight > transitionBuffer) {
+      if (dotSphereLight > lightTransitionBuffer) {
         colorHsluv = colorBackground.xyz;
       }
       else {
@@ -426,8 +428,8 @@ const cityShader = {
     maxPopulation: map.prop('maxPopulation'),
     colorLights: colors.hsluvBackground,
     tick: ({ tick }) => tick,
-    transitionBuffer: 0.2,
     lightPosition: () => globalContext.lightPosition,
+    lightTransitionBuffer: globalContext.lightTransitionBuffer,
   },
   blend: {
     enable: true,
@@ -465,7 +467,7 @@ const cityShader = {
     uniform vec4 colorLights;
     uniform float maxPopulation;
     uniform float tick;
-    uniform float transitionBuffer;
+    uniform float lightTransitionBuffer;
     uniform vec3 lightPosition;
     varying vec2 vpos;
     varying vec2 vanchor;
@@ -485,7 +487,7 @@ const cityShader = {
       float pop = clamp(vpopulation / maxPopulation, 0.0, 1.0);
       float popBaseRadius = mix(0.2, 0.4, pop);
       float popFluxFactor = mix(0.1, 0.2, pop);
-      float popLightFactor = smoothstep(transitionBuffer, -transitionBuffer, dotSphereLight);
+      float popLightFactor = smoothstep(lightTransitionBuffer, -lightTransitionBuffer, dotSphereLight);
       float r = random(vpos.xy);
       float popFlux = sin((tick + r * 1000.0)/100.0) * popFluxFactor;
       float randomThreshold = sqrt(r) * (popBaseRadius + popFlux) * popLightFactor;
@@ -569,6 +571,7 @@ const terrainImgTileShader = {
     },
     lightPosition: () => globalContext.lightPosition,
     lightAmbientAmount: () => globalContext.lightAmbientAmount,
+    lightTransitionBuffer: globalContext.lightTransitionBuffer,
   },
   blend: {
     enable: true,
@@ -639,11 +642,6 @@ const terrainImgTileShader = {
       return normalize(cross(va, vb));
     }
 
-    // transform original from [min, max] => [0, 1]
-    float transformRange (float original, float min, float max) {
-      return (original - min) / (max - min);
-    }
-
     void main () {
       float z = texelToElevation(texture2D(heightMap, vtcoord).xyz);
       float normalizedElevation = max(0.0, min(1.0, z / maxElevation));
@@ -666,20 +664,18 @@ const terrainImgTileShader = {
       // 1.0 = full light
       // float hiddenThreshold = 1.0 - lightAmount;
       float hiddenThreshold = 1.0 - (dotPositionLight * 0.5 + 0.5);
-      float transitionBuffer = 0.2;
-      if (dotSphereLight < -transitionBuffer) {
+      float lightTransitionBuffer = 0.2;
+      if (dotSphereLight < -lightTransitionBuffer) {
         // dark
         hiddenThreshold = 0.0;
       }
-      else if (dotSphereLight > -transitionBuffer && dotSphereLight < 0.0) {
-        // dark to light transition
-        // map [-thresholdBuffer, +thresholdBuffer] => [0, 1]
-        float transitionFactor = transformRange(dotSphereLight, -transitionBuffer, 0.0);
-        hiddenThreshold = hiddenThreshold * transitionFactor * -1.0 - 0.2;
-      }
-      else if (dotSphereLight > 0.0 && dotSphereLight < transitionBuffer) {
-        float transitionFactor = transformRange(dotSphereLight, 0.0, transitionBuffer);
-        hiddenThreshold = hiddenThreshold * transitionFactor * 1.0 - 0.2;
+      else if (dotSphereLight > -lightTransitionBuffer && dotSphereLight < lightTransitionBuffer) {
+        // transition space
+        // [-0.2, 0.2] => [0, 1] => [-1, 1]
+        float transitionFactor = smoothstep(-lightTransitionBuffer, lightTransitionBuffer, dotSphereLight);
+        // [0, 1] => [-1, 1]
+        transitionFactor = transitionFactor * 2.0 - 1.0;
+        hiddenThreshold = hiddenThreshold * (transitionFactor * 2.0 - 1.0) * 1.0 - 0.2;
       }
       float opacity = 1.0;
       // float opacity = min(1.0, normalizedElevation + 0.3);
@@ -766,6 +762,7 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
     colorForeground: colors.hsluvForeground,
     coastlineFade: params.coastlineFade,
     lightPosition: () => globalContext.lightPosition,
+    lightTransitionBuffer: globalContext.lightTransitionBuffer,
   }),
   vert: glsl`
     precision highp float;
@@ -865,6 +862,7 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
     varying vec2 vPosLonLat;
 
     uniform vec3 lightPosition;
+    uniform float lightTransitionBuffer;
     uniform vec4 colorForeground;
     uniform float coastlineFade;
 
@@ -891,19 +889,15 @@ const coastlineShadowShader = Object.assign({}, geoRenderShaders.areas, {
         hiddenThreshold = 1.2 - random(vec2(vpos.x, normalizedElevation));
       }
 
-      float transitionBuffer = 0.2;
-      if (dotSphereLight < -transitionBuffer) {
+      if (dotSphereLight < -lightTransitionBuffer) {
         // dark
         hiddenThreshold = 0.0;
       }
-      else if (dotSphereLight > -transitionBuffer && dotSphereLight < 0.0) {
+      else if (dotSphereLight > -lightTransitionBuffer && dotSphereLight < lightTransitionBuffer) {
         // transitioning
-        float transitionFactor = smoothstep(0.0, -transitionBuffer, dotSphereLight);
-        hiddenThreshold = hiddenThreshold * transitionFactor * -1.0 - 0.2;
-      }
-      else if (dotSphereLight > 0.0 && dotSphereLight < transitionBuffer) {
-        float transitionFactor = smoothstep(0.0, transitionBuffer, dotSphereLight);
-        hiddenThreshold = hiddenThreshold * transitionFactor * +1.0 - 0.2;
+        float transitionFactor = smoothstep(-lightTransitionBuffer, lightTransitionBuffer, dotSphereLight);
+        transitionFactor = transitionFactor * 2.0 - 1.0;
+        hiddenThreshold = hiddenThreshold * transitionFactor * 1.0 - 0.2;
       }
       
       float opacity = 1.0;
@@ -1120,7 +1114,6 @@ resl({
 
     const props = geodata.update(map.zoom)
 
-console.log({props})
     // setProps(draw.point.props, props.pointP)
     setProps(draw.lineFill.props, props.lineP)
     // setProps(draw.lineStroke.props, props.lineP)
@@ -1132,7 +1125,7 @@ console.log({props})
     // setProps(draw.areaT.props, props.areaT)
     // setProps(draw.areaBorderT.props, props.areaBorderT)
     setProps(draw.city.props, cityProps({ dimensions: [0.1, 0.1], cities: cityJson }))
-console.log(draw.city.props)
+
     setProps(
       draw.lineFill.props,
       Object.assign({}, map._props()[0])

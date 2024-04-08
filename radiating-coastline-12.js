@@ -720,6 +720,7 @@ const terrainImgTileLayer = ({ drawCmd }) => {
       const file = key.split('!')[1]
       const level = Number(file.split('-')[0])
       const prop = Object.assign({}, map._props()[0], {
+        key,
         id,
         zindex: 1,
         texture: map.regl.texture(),

@@ -1139,11 +1139,11 @@ resl({
     )
     setProps(
       draw.ocean.props,
-      Object.assign, map._props()[0]
+      Object.assign({}, map._props()[0])
     )
     setProps(
       draw.city.props,
-      Object.assign, map._props()[0]
+      Object.assign({}, map._props()[0])
     )
 
     // - single run as draw individual commands

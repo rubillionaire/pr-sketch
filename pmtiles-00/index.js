@@ -5,9 +5,13 @@ const regl = require('regl')
 const resl = require('resl')
 const geojson2mesh = require('earth-mesh')
 const { default: MixmapPMTiles } = require('mixmap-pmtiles')
+const { default: tileGrid } = require('mixmap-tile-grid')
 
 const mix = mixmap(regl, {
   extensions: ['oes_element_index_uint'],
+  attributes: {
+    stencil: true,
+  },
 })
 
 const prWE = [-67.356661, -65.575714] 
@@ -25,56 +29,54 @@ const map = mix.create({
   backgroundColor: [0.5, 0.5, 0.5, 1.0],  
 })
 
+// tileGrid(map, { zindex: 1 })
+
 var style = new Image
 style.onload = function () {
   const tiles = new MixmapPMTiles(map, {
     source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/pr.osm.pmtiles',
+    // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/pr-tile-simplified.pmtiles',
     style,
-    filterFeature: (feature) => {
-      // return typeof feature.properties.place === 'string'
-      // renders correctly
-      return feature.properties.place === 'island'
-    },
   })
 }
 style.src = './style-textures/isolate-place-island.png'
 // style.src = './style-textures/flaneur-yuv.png'
 
 
-const drawNE = map.createDraw({
-  vert: `
-    precision highp float;
+// const drawNE = map.createDraw({
+//   vert: `
+//     precision highp float;
 
-    attribute vec2 position;
+//     attribute vec2 position;
     
-    uniform vec4 viewbox;
-    uniform vec2 offset;
-    uniform float aspect, zindex;
+//     uniform vec4 viewbox;
+//     uniform vec2 offset;
+//     uniform float aspect, zindex;
 
-    void main () {
-      vec2 p = position.xy + offset;
-      gl_Position = vec4(
-        (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-        ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
-        zindex, 1);
-    }
-  `,
-  frag: `
-    precision highp float;
+//     void main () {
+//       vec2 p = position.xy + offset;
+//       gl_Position = vec4(
+//         (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
+//         ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
+//         zindex, 1);
+//     }
+//   `,
+//   frag: `
+//     precision highp float;
 
-    void main () {
-      gl_FragColor = vec4(1,0,0,1);
-    }
-  `,
-  attributes: {
-    position: map.prop('positions'),
-  },
-  uniforms: {
-    aspect: ({ viewportWidth, viewportHeight }) => viewportWidth/viewportHeight,
-    zindex: -2, // put it below everything else, toggle up to see it over the pmtiles data
-  },
-  elements: map.prop('cells'),
-})
+//     void main () {
+//       gl_FragColor = vec4(1,0,0,1);
+//     }
+//   `,
+//   attributes: {
+//     position: map.prop('positions'),
+//   },
+//   uniforms: {
+//     aspect: ({ viewportWidth, viewportHeight }) => viewportWidth/viewportHeight,
+//     zindex: -2, // put it below everything else, toggle up to see it over the pmtiles data
+//   },
+//   elements: map.prop('cells'),
+// })
 
 resl({
   manifest: {
@@ -86,11 +88,11 @@ resl({
   },
   onDone: ({ neGeojson }) => {
     const neMesh = geojson2mesh(neGeojson)
-    drawNE.props.push({
-      positions: neMesh.triangle.positions,
-      cells: neMesh.triangle.cells,
-    })
-    map.draw()
+    // drawNE.props.push({
+    //   positions: neMesh.triangle.positions,
+    //   cells: neMesh.triangle.cells,
+    // })
+    // map.draw()
   },
 })
 

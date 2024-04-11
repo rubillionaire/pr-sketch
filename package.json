@@ -26,6 +26,7 @@
     "@turf/nearest-point-on-line": "^6.5.0",
     "@turf/polygon-to-line": "^6.5.0",
     "angle-normals": "^1.0.0",
+    "canvas-fit": "^1.5.0",
     "dat.gui": "^0.7.9",
     "earth-mesh": "^2.1.0",
     "fast-png": "^6.1.0",

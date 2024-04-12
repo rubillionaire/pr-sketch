@@ -1,5 +1,8 @@
-// stencil-00
+// stencil-01
 // - proof of concept using the regl of mixmap to do stencil buffer work.
+// - 01
+// - add depth buffer testing to the mix, seems to be the source of things 
+// not rendering correctly in mixmap
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 
@@ -27,13 +30,13 @@ const map = mix.create({
 
 const largeSquare = [
   // top left triangle
-  [-1, 1],
-  [-1, -1],
-  [1, 1],
+  [-2, 2],
+  [-2, -2],
+  [2, 2],
   // bottom right triangle
-  [-1, -1],
-  [1, -1],
-  [1, 1],
+  [-2, -2],
+  [2, -2],
+  [2, 2],
 ]
 
 const smallerSquare = [
@@ -69,7 +72,7 @@ const createMask = map.regl({
   depth: {
     enable: false,
     mask: false,
-  }
+  },
 })
 
 // pass stencil test only if value in stencil buffer is 1.
@@ -81,8 +84,12 @@ const honorMask = map.regl({
       cmp: 'equal',
       ref: 1,
       mask: 0xff
-    }
-  }
+    },
+  },
+  depth: {
+    enable: true,
+    mask: true,
+  },
 })
 
 const drawToMask = map.regl({
@@ -95,7 +102,7 @@ const drawToMask = map.regl({
     attribute vec2 position;
 
     void main () {
-      gl_Position = vec4(position, 0, 1);
+      gl_Position = vec4(position * vec2(0.5), 0, 1);
     }
   `,
   frag: `
@@ -120,7 +127,7 @@ const drawPosition = map.regl({
     varying vec2 vPosition;
 
     void main () {
-      gl_Position = vec4(position, 0, 1);
+      gl_Position = vec4(position, 0.8, 1);
       vPosition = position;
     }
   `,
@@ -136,10 +143,14 @@ const drawPosition = map.regl({
   `,
 })
 
+const color = [1,1,1,1]
+map.regl.clear({ color, depth: true })
+
 map.regl.frame(() => {
   map.regl.clear({
-    color: [1, 1, 1, 1],
+    color,
     stencil: 0,
+    depth: 1,
   })
 
   createMask(() => {

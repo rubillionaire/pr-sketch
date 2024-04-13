@@ -28,8 +28,15 @@ const map = mix.create({
   backgroundColor: [0.5, 0.5, 0.5, 1.0],  
 })
 
-const useSquareGeom = false
-const honorStencil = true
+const url = new URL(window.location)
+const urlSearch = new URLSearchParams(url.search)
+
+const useSquareGeom = urlSearch.get('geom') === 'tile'
+  ? false
+  : true
+const honorStencil = urlSearch.get('stencil') === 'false'
+  ? false
+  : true
 
 const largeSquare = [
   // top left triangle
@@ -63,11 +70,11 @@ const createMask = map.regl({
       ref: 1,
       mask: 0xff
     },
-    opFront: {
-      fail: 'replace',
-      zfail: 'replace',
+    op: {
+      fail: 'keep',
+      zfail: 'keep',
       zpass: 'replace'
-    }
+    },
   },
   // we want to write only to the stencil buffer,
   // so disable these masks.
@@ -88,6 +95,11 @@ const honorMask = map.regl({
       ref: 1,
       mask: 0xff
     },
+    op: {
+      fail: 'keep',
+      zfail: 'keep',
+      zpass: 'replace'
+    },
   },
   depth: {
     enable: true,
@@ -95,6 +107,23 @@ const honorMask = map.regl({
     func: 'less',
   },
 })
+
+const glPosition = useSquareGeom
+  ? `float x = position.x;
+      float y = position.y;
+      float z = 0.0;
+      x = clamp(x, -1., 1.);
+    y = clamp(y, -1., 1.);
+      gl_Position = vec4(x, y, z, 1);`
+  : `
+    vec2 p = position.xy + offset;
+    float x = (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0;
+    float y = ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect;
+    float z = 0.0;
+    x = clamp(x, -1., 1.);
+    y = clamp(y, -1., 1.);
+    gl_Position = vec4(x, y, z, 1);
+    `
 
 const drawToMask = map.regl({
   attributes: {
@@ -114,26 +143,19 @@ const drawToMask = map.regl({
     uniform vec4 viewbox;
     uniform vec2 offset;
     uniform float aspect;
+    varying vec4 vpos;
     void main () {
-      ${useSquareGeom
-        // ? `gl_Position = vec4(position, 0, 1);`
-        ? `float x = position.x;
-            float y = position.y * aspect;
-            gl_Position = vec4(x, y, 0, 1);`
-        : `
-          vec2 p = position.xy + offset;
-          gl_Position = vec4(
-            (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-            ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
-            0.0, 1);
-        `
-      }
+      ${glPosition}
+      vpos = gl_Position.xyzw;
     }
   `,
   frag: `
     precision highp float;
+    varying vec4 vpos;
     void main () {
-      gl_FragColor = vec4(1.0);
+      gl_FragColor = vec4(vpos.xyz, 1.0);
+      // gl_FragColor = vec4(vpos.xy, 0, 1.0);
+      // gl_FragColor = vec4(1.0);
     }
   `,
 })
@@ -157,30 +179,19 @@ const drawPosition = map.regl({
     uniform vec4 viewbox;
     uniform vec2 offset;
     uniform float zindex, aspect;
+    varying vec4 vpos;
     void main () {
-      ${useSquareGeom
-          // ? `gl_Position = vec4(position, 0.5, 1);`
-          ? `float x = position.x;
-              float y = position.y * aspect;
-              float z = 0.1;
-              gl_Position = vec4(x, y, z, 1);`
-          : `
-            vec2 p = position.xy + offset;
-            float z = 1.0/(1.0+zindex);
-            z = 0.1;
-            gl_Position = vec4(
-              (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-              ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
-              z, 1);
-          `
-        }
+      ${glPosition}
+      vpos = gl_Position.xyzw;
     }
   `,
   frag: `
     precision highp float;
+    varying vec4 vpos;
 
     void main () {
-      vec3 color = vec3(1.0, 0.0, 1.0);
+      // vec3 color = vec3(1.0, 0.0, 1.0);
+      vec3 color = vpos.xyz;
       gl_FragColor = vec4(color, 1.0);
     }
   `,
@@ -197,8 +208,10 @@ const markProps = Object.assign({},
 const drawProps = Object.assign({ zindex: 1 },
   map._props()[0],
   useSquareGeom ? squareToMesh(largeSquare) : null,
-  useSquareGeom ? null : fullTileMesh()
+  useSquareGeom ? null : bboxToMesh(map.viewbox.slice())
 )
+
+console.log({markProps})
 
 const frameHonorStencil = () => {
   map.regl.clear({

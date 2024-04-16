@@ -26,10 +26,15 @@ console.log({viewbox})
 
 const map = mix.create({
   viewbox,
-  backgroundColor: [0.5, 0.5, 0.5, 1.0],  
+  backgroundColor: [0.5, 0.5, 0.5, 1.0],
+  clear: {
+    color: [0.5, 0.5, 0.5, 1.0],
+    depth: 1,
+    stencil: 0,
+  },
 })
 
-// tileGrid(map, { zindex: 1 })
+tileGrid(map, { zindex: 1 })
 
 var style = new Image
 style.onload = function () {
@@ -37,10 +42,14 @@ style.onload = function () {
     source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/pr.osm.pmtiles',
     // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/pr-tile-simplified.pmtiles',
     style,
+    filterFeature: (feature) => {
+      const isIsland = feature.properties?.place === 'island'
+      return isIsland
+    },
   })
 }
-style.src = './style-textures/isolate-place-island.png'
-// style.src = './style-textures/flaneur-yuv.png'
+// style.src = './style-textures/isolate-place-island.png'
+style.src = './style-textures/flaneur-yuv.png'
 
 
 // const drawNE = map.createDraw({

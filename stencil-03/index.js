@@ -6,7 +6,8 @@
 // - 02
 // - stencil props now get the correct result
 // - 03
-// - wip, can we get this to work outside of the context of a frame callback
+// - can we get this to work outside of the context of a frame callback
+// - the answer was to inline stencil props instead of leaning on regl scoping
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 

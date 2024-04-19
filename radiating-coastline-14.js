@@ -1,4 +1,4 @@
-// radiating-coastline-13
+// radiating-coastline-14
 // - fork of buffered-coast-lines-03
 // - 00
 // - round trips geo data into and out of the georender format with
@@ -52,6 +52,13 @@
 // - full night day cycle for city shader
 // - 13
 // - clip terrain tiles to natural earth island features
+// - 14
+// - use normalized elevation in conjunciton with dotSphereLight to come up
+// with the hidden threshold. this means that both the relative elevation
+// and direction to the sun are accounted for, instead of purely just the
+// direction from the sun. this makes peaks a bit more pronounced than
+// lowland points
+// - tighter radiating coastline
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -313,13 +320,13 @@ const geoRenderShadersTick = {
         float d = vdashLength;
         float g = vdashGap;
         float x = 1.0 - step(d, mod(t, d+g));
-        float tt = 1.0 - (sin((tick + vRadiatingCoastlineBufferIndex * 40.0 + vpos.x * vpos.y * 80.0 + mod(t, 20.0) * 4.0)/40.0) * 0.5 + 0.5);
-
-        // vec3 colorHsluv;
-        float opacity;
-        if (dotSphereLight < 0.0) {
-
-        }
+        float tt = 1.0 - (
+          sin(
+            (tick + vRadiatingCoastlineBufferIndex * 40.0 +
+              vpos.x * vpos.y * 80.0 +
+              mod(t, 20.0) * 4.0
+            )/18.0
+          ) * 0.5 + 0.5);
 
         vec3 colorHsluv = colorForeground.xyz;
         if (dotSphereLight < 0.0) {
@@ -616,7 +623,7 @@ const terrainImgTileShader = {
     uniform vec4 colorBackground;
     uniform vec2 texelSize;
     uniform vec3 lightPosition;
-    uniform float lightAmbientAmount;
+    uniform float lightAmbientAmount, lightTransitionBuffer;
 
     varying vec2 vtcoord;
     varying vec2 vpos;
@@ -666,8 +673,8 @@ const terrainImgTileShader = {
       // 0.0 = fully dadrk
       // 1.0 = full light
       // float hiddenThreshold = 1.0 - lightAmount;
-      float hiddenThreshold = 1.0 - (dotPositionLight * 0.5 + 0.5);
-      float lightTransitionBuffer = 0.2;
+      // float hiddenThreshold = 1.0 - (dotPositionLight * 0.5 + 0.5);
+      float hiddenThreshold = 1.0 - mix(0.0, 0.4, normalizedElevation) - mix(0.0, 0.6, dotPositionLight * 0.5 + 0.5);
       if (dotSphereLight < -lightTransitionBuffer) {
         // dark
         hiddenThreshold = 0.0;

@@ -31,7 +31,6 @@ const draw = regl({
   },
   elements: regl.prop('cells'),
   uniforms: {
-    width: regl.prop('width'),
     aspect: ({ viewportWidth, viewportHeight}) => viewportWidth / viewportHeight,
     charOffset: regl.prop('charOffset'),
     tick: ({ tick }) => tick,
@@ -49,7 +48,7 @@ const draw = regl({
   vert: `
     precision highp float;
     attribute vec2 position;
-    uniform float width, aspect, charOffset, tick, radiusOffsetNormalized, thetaOffset;
+    uniform float aspect, charOffset, tick, radiusOffsetNormalized, thetaOffset;
     varying float vNormalizedRadius;
     
     const float PI = ${Math.PI};
@@ -122,7 +121,6 @@ async function main () {
   const font = new FontFace('Fredoka', "url('fonts/Fredoka-SemiBold.ttf')")
   await font.load()
   document.fonts.add(font)
-  const width = 1
   const mark = 'coquí'
 
   const markMeshes = ({ radiusOffset=0.0, thetaOffset=0.0 }={}) => {
@@ -140,7 +138,6 @@ async function main () {
         textAlign: 'center',
       })
       return Object.assign({
-        width,
         charOffset,
         radiusOffset,
         thetaOffset,

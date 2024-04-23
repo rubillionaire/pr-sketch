@@ -4,6 +4,7 @@ const tilebelt = require('@mapbox/tilebelt')
 const path = require('path')
 
 const directory = process.argv[2]
+const zoomOrTileSet = process.argv[3] ? getZoomOrTileSet(process.argv[3]) : 8
 
 ;(async () => {
   const mapboxKey = (await fsp.readFile('mapbox.key')).toString().trim()
@@ -13,7 +14,13 @@ const directory = process.argv[2]
   prBbox[3] += 0.8
   const prRootTile = tilebelt.bboxToTile(prBbox)
 
-  const tileSet = getChildrenAtZoom([prRootTile], 8)
+  let tileSet
+  if (Array.isArray(zoomOrTileSet)) {
+    tileSet = zoomOrTileSet
+  }
+  else {
+    tileSet = getChildrenAtZoom([prRootTile], 8)
+  }
 
   const tileProcessors = tileSet.map((tile) => {
     return new Promise(async (resolve, reject) => {
@@ -51,4 +58,18 @@ function getChildrenAtZoom (rootTiles, desiredZoom) {
   const tileSet = rootTiles.map(tile => tilebelt.getChildren(tile))
     .reduce((acc, curr)=> {acc = acc.concat(curr); return acc;}, [])
   return getChildrenAtZoom(tileSet, desiredZoom)
+}
+
+function getZoomOrTileSet (input) {
+  if (input.indexOf('-') > -1) {
+    // is tileset, assumes {z}-{x}-{y}
+    return input.split(',').map((s) => {
+      const n = s.split('-').map(Number)
+      return [n[1], n[2], n[0]]
+    })
+  }
+  else {
+    // is zoom to capture
+    return Number(input)
+  }
 }

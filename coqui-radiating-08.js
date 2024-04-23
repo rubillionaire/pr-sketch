@@ -220,7 +220,7 @@ async function main () {
         markMeshPair(tightProps({
             anchor: [
               ((x * dim + dim/2) / window.innerWidth) * 2 - 1,
-              1.8 - (((y * dim+ dim/2) / window.innerHeight ) * 2 - 1)/aspect,
+              (1.0 - (((y * dim+ dim/2) / window.innerHeight) * 2 - 1))/aspect,
             ],
           })).flat()
       )

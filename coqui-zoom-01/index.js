@@ -2,6 +2,8 @@
 // - fork of coqui-sdf-02
 // - 00
 // - considers zoom level 1, min zoom
+// - 01
+// - ?zoom=1||2||3
 const regl = require('regl')({
    extensions: [
     'ANGLE_instanced_arrays',
@@ -9,6 +11,11 @@ const regl = require('regl')({
 })
 const glsl = require('glslify')
 const { Atlas } = require('tiny-atlas')
+
+const searchParams = new URLSearchParams(window.location.search)
+const params = {
+  zoom: searchParams.has('zoom') ? +searchParams.get('zoom') : 3
+}
 
 const colors = {
   light: [255, 243, 135].concat([255.0]),
@@ -87,6 +94,10 @@ const drawGlyphs = regl({
       buffer: regl.prop('thetaRange'),
       divisor: 1,
     },
+    glyphOffsetScalar: {
+      buffer: regl.prop('glyphOffsetScalar'),
+      divisor: 1,
+    },
   },
   elements: [[0, 1, 2], [0, 2, 3]],
   primitive: 'triangles',
@@ -123,6 +134,7 @@ const drawGlyphs = regl({
     attribute float glyphRasterTop;
     attribute vec2 thetaRange;
     attribute float glyphInLabelStringIndex;
+    attribute vec2 glyphOffsetScalar;
     uniform float tick, aspect, pixelRatio;
     uniform vec2 screenDim;
     uniform vec2 labelTexDim;
@@ -144,7 +156,6 @@ const drawGlyphs = regl({
       vNormalizedRadius = normalizeRadius;
       float radius = mix(radiusRange.x, radiusRange.y, normalizeRadius);
       float radiusMidpoint = mix(radiusRange.x, radiusRange.y, 0.5);
-      vec2 radialCenter = vec2(-radiusMidpoint*0.5, -radiusMidpoint*2.);
       
       vec2 labelScaledFontSize = vec2(
         fontSize * pixelRatio * labelDim.x / labelDim.y * aspect,
@@ -152,19 +163,34 @@ const drawGlyphs = regl({
       );
       vec2 labelScaledScreen = labelScaledFontSize / screenDim * pixelRatio;
       vec2 glyphScale = glyphRasterDim / labelDim * labelScaledScreen;
+      vec2 radialCenter = vec2(
+        labelScaledScreen.x * labelCharLengh / 2.0,
+        -radiusMidpoint
+      );
       
-      float theta = mix(thetaRange.x, thetaRange.y, 1.0 - (glyphInLabelStringIndex/labelCharLengh));
+      float glyphIndexNormalized = glyphInLabelStringIndex/labelCharLengh;
+
+      vec2 thetaScalar = vec2(thetaRange.x, thetaRange.y);
+      float theta = mix(
+        0., PI,
+        1.0 - smoothstep(
+          thetaScalar.x, thetaScalar.y,
+          (glyphInLabelStringIndex + (1.0/labelCharLengh)) * 2.0 - 1.0));
+
+      // float theta = mix(thetaRange.x, thetaRange.y, 1.0 - glyphIndexNormalized);
+      
       theta += thetaOffset;
       vec2 thetaXYUnit = vec2(cos(theta), sin(theta));
-      vec2 glyphOffset = thetaXYUnit * vec2(
+      vec2 glyphOffset = thetaXYUnit * vec2(aspect, 1.0) * vec2(
         0.6,
-        ((glyphRasterTop - glyphRasterDim.y) / labelDim.y) * 0.3
-      );
+        ((glyphRasterTop - glyphRasterDim.y) / labelDim.y)
+      ) * glyphOffsetScalar;
       vec2 radialOffset = thetaXYUnit * radius;
-      mat2 rotation = rotate2d(theta + PI * 1.5);
+      mat2 rotation = rotate2d(theta + PI * 1.4);
+      float radialScale = mix(0.2, 2.0, normalizeRadius);
 
       vec2 uv = position * 0.5 + 0.5;
-      vec2 p = uv * glyphScale * rotation + radialOffset + glyphOffset + anchor + radialCenter;
+      vec2 p = uv * glyphScale * rotation * radialScale + radialOffset + glyphOffset + anchor + radialCenter;
 
       gl_Position = vec4(p.x, p.y, 0.0, 1.0);
 
@@ -227,14 +253,17 @@ const drawGlyphs = regl({
 })
 
 function markLabels (mark) {
-  return markLabelsZoomMin(mark)
-  // return markLabelsZoomMax(mark)
+  switch (params.zoom) {
+    case 1: return markLabelsZoom1(mark)
+    case 2: return markLabelsZoom2(mark)
+    case 3: return markLabelsZoom3(mark)
+  }
 }
 
 // given a screen size, return a single mark in the middle of the screen
 // the font size should be proportional to the window size. the shorder side
 // of the two
-function markLabelsZoomMin (mark) {
+function markLabelsZoom1 (mark) {
   let shorterSide = Math.min(window.innerWidth, window.innerHeight)
   let fontSize
   if (window.innerWidth < window.innerHeight) {
@@ -249,72 +278,169 @@ function markLabelsZoomMin (mark) {
     return {
       text: mark,
       labelCharLengh: mark.length,
-      anchor: [0.5, 0.5],
+      anchor: [-1.0, 0.0],
       speed: 0.005,
       thetaOffset: +Math.PI/20,
       radiusOffset: 0.4,
       fontSize,
-      thetaRange: [Math.PI * 0.25, Math.PI * 2.9],
+      thetaRange: [-3, 3],
       radiusRange: [0.1, 0.7],
+      glyphOffsetScalar: [1.0, 0.3],
       ...opts,
     }
   }
   const labels = [
-    baseLabel({ radiusOffset: 0.0, thetaOffset: -Math.PI * 0.15 }),
-    baseLabel({ radiusOffset: 0.5, thetaOffset: -Math.PI * 0.1 }),
+    baseLabel({ radiusOffset: 0.0, thetaOffset: +Math.PI * 0.25 }),
+    baseLabel({ radiusOffset: 0.5, thetaOffset: +Math.PI * 0.3 }),
   ]
 
   return labels
 }
 
-function markLabelsZoomMax (mark) {
-  const fontSize = pixelRatio === 2 ? 14 : 20
+function dim ({ zoom, mark, maxFontSize }) {
+  let fontSize, rows, cols
+  if (window.innerWidth < window.innerHeight) {
+    const density = zoom === 2 ? 2.0 : 1.5
+    fontSize = Math.min(maxFontSize, window.innerWidth/zoom/mark.length)
+    cols = zoom
+    rows = Math.max(1, Math.floor(window.innerHeight / fontSize / density))
+  }
+  else {
+    const density = zoom === 2 ? 3.0 : 2.
+    fontSize = Math.min(maxFontSize, window.innerHeight/zoom/2.0)
+    rows = Math.floor(window.innerHeight/fontSize/density)
+    cols = Math.max(1, Math.floor(window.innerWidth / (fontSize * mark.length)))
+  }
+  console.log({ fontSize })
+  console.log({ rows })
+  console.log({ cols })
+  return { rows, cols, fontSize}
+}
+
+// subdivide the space into quarters
+function markLabelsZoom2 (mark) {
+  const zoom = 2
+  const { rows, cols, fontSize } = dim({
+    zoom,
+    mark,
+    maxFontSize: 48,  
+  })
+
   const baseLabel = (opts={}) => {
     return {
       text: mark,
       labelCharLengh: mark.length,
-      anchor: [0, 0],
-      speed: 0.0001,
-      thetaOffset: -Math.PI/20,
-      thetaRange: [-Math.PI, Math.PI],
-      radiusOffset: 0.5,
+      anchor: [-0.2, -0.2],
+      speed: 0.008,
+      thetaOffset: +Math.PI/20,
+      radiusOffset: 0.4,
       fontSize,
-      radiusRange: [0.0, 0.01],
+      thetaRange: [-4, 4],
+      radiusRange: [0.0, 0.4],
+      glyphOffsetScalar: [1.0, 0.03],
+      ...opts,
+    }
+  }
+  const labelPair = (opts={}) => {
+    const thetaOffset = Math.random() * 0.4
+    const tickThetaOffset = +Math.PI * thetaOffset
+    const tockThetaOffset = +Math.PI * (thetaOffset + ((Math.random() < 0.5 ? 1 : -1 ) * 0.07))
+    const tickRadiusOffset = Math.random()
+    const tockRadiusOffset = (tickRadiusOffset + 0.5) % 1.0
+    return [
+      baseLabel({
+        ...opts,
+        thetaOffset: tickThetaOffset,
+        radiusOffset: tickRadiusOffset,  
+      }),
+      baseLabel({
+        ...opts,
+        thetaOffset: tockThetaOffset,
+        radiusOffset: tockRadiusOffset,  
+      }),
+    ]
+  }
+
+  const aspect = window.innerWidth / window.innerHeight
+  let labelOpts = []
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      labelOpts.push({
+        anchor: [
+          x/cols * 2.0 - 1.0,
+          y/rows * 2.0 - 1.0,
+        ],
+        glyphOffsetScalar: [1.0, 0.08],
+      })
+    }
+  }
+
+  const labels = labelOpts.map(labelOpt => labelPair(labelOpt)).flat()
+
+  return labels
+}
+
+function markLabelsZoom3 (mark) {
+  const zoom = 3
+  const { rows, cols, fontSize } = dim({
+    zoom,
+    mark,
+    maxFontSize: 48  
+  })
+
+  const baseLabel = (opts={}) => {
+    return {
+      text: mark,
+      labelCharLengh: mark.length,
+      anchor: [-0.2, -0.2],
+      speed: 0.008,
+      thetaOffset: +Math.PI/20,
+      radiusOffset: 0.4,
+      fontSize,
+      thetaRange: [-4.0, 4.0],
+      radiusRange: [0.0, 0.3],
+      glyphOffsetScalar: [1.0, 0.2],
       ...opts,
     }
   }
 
-  const labels = []
-  const markWidth = (fontSize * mark.length * (window.innerWidth/window.innerHeight))
-  const halfMarkWidth = (markWidth / 2)
-  const markHeight = (fontSize * 2.5)
-  const countX = window.innerWidth / markWidth
-  const countY = window.innerHeight / markHeight
-  for (let y = 0; y < countY; y++) {
-    const xGitter = y % 2 === 0 ? 0 : (markWidth * (Math.random() * 2.0 - 1.0))
-    for (let x = 0; x < countX; x++) {
-      const anchor = [
-        ((xGitter + halfMarkWidth + (x * markWidth)) / window.innerWidth) * 2.0 -1.0,
-        ((y * markHeight / window.innerHeight) * 2.0 - 1.0)
-      ]
-      const tick = {
-        radiusOffset: Math.random(),
-        thetaOffset: Math.PI/6 * (Math.random() * 2.0 -1.0),
-      }
-      const tock = {
-        radiusOffset: (tick.radiusOffset + 0.8) % 1.0,
-        thetaOffset: tick.thetaOffset + Math.PI/20,
-      }
-      labels.push(baseLabel({
-        ...tick,
-        anchor,
-      }))
-      labels.push(baseLabel({
-        ...tock,
-        anchor,
-      }))
+  const labelPair = (opts={}) => {
+    const thetaOffset = Math.random() * 0.4
+    const tickThetaOffset = +Math.PI * thetaOffset
+    const tockThetaOffset = +Math.PI * (thetaOffset + ((Math.random() < 0.5 ? 1 : -1 ) * 0.05))
+    const tickRadiusOffset = Math.random()
+    const tockRadiusOffset = (tickRadiusOffset + 0.5) % 1.0
+    const speed = 0.008 + Math.random() * 0.002 * (Math.random() < 0.5 ? 1 : -1)
+    return [
+      baseLabel({
+        ...opts,
+        thetaOffset: tickThetaOffset,
+        radiusOffset: tickRadiusOffset,
+        speed,
+      }),
+      baseLabel({
+        ...opts,
+        thetaOffset: tockThetaOffset,
+        radiusOffset: tockRadiusOffset,  
+        speed,
+      }),
+    ]
+  }
+  const aspect = window.innerWidth / window.innerHeight
+  let labelOpts = []
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      labelOpts.push({
+        anchor: [
+          x/cols * 2.0 - 1.0,
+          y/rows * 2.0 - 1.0,
+        ],
+        glyphOffsetScalar: [1.0, 0.08],
+      })
     }
   }
+
+  const labels = labelOpts.map(labelOpt => labelPair(labelOpt)).flat()
 
   return labels
 }
@@ -351,6 +477,7 @@ function markLabelsZoomMax (mark) {
           props.radiusOffset = new Float32Array(size * 1)
           props.fontSize = new Float32Array(size * 1)
           props.radiusRange = new Float32Array(size * 2)
+          props.glyphOffsetScalar = new Float32Array(size * 2)
         },
         onGlyph: ({ props, labelIndex, charIndex, glyphIndex }) => {
           const label = labels[labelIndex]
@@ -365,6 +492,8 @@ function markLabelsZoomMax (mark) {
           props.radiusRange[glyphIndex * 2 + 1] = label.radiusRange[1]
           props.radiusOffset[glyphIndex * 1 + 0] = label.radiusOffset
           props.fontSize[glyphIndex * 1 + 0] = label.fontSize
+          props.glyphOffsetScalar[glyphIndex * 2 + 0] = label.glyphOffsetScalar[0]
+          props.glyphOffsetScalar[glyphIndex * 2 + 1] = label.glyphOffsetScalar[1]
         },
       }
     })

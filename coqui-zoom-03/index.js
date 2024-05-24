@@ -1,9 +1,14 @@
-// coqui-zoom-01
+// coqui-zoom-03
 // - fork of coqui-sdf-02
 // - 00
 // - considers zoom level 1, min zoom
 // - 01
 // - ?zoom=1||2||3
+// - 02
+// - move between zooms
+// - 03
+// - grown and shrink into zoom levels, on a pow 2 scale, so that increasingly zoom /
+// label number can have more time to come in and out
 const regl = require('regl')({
    extensions: [
     'ANGLE_instanced_arrays',
@@ -14,7 +19,11 @@ const { Atlas } = require('tiny-atlas')
 
 const searchParams = new URLSearchParams(window.location.search)
 const params = {
-  zoom: searchParams.has('zoom') ? +searchParams.get('zoom') : 3
+  // ` maps onto `freezeZoom`
+  // 0 - 3 values freeze on a specific zoom
+  // -1 shows all zooms at once :)
+  // 4 loops through 0-3 zooms
+  zoom: searchParams.has('zoom') ? parseFloat(searchParams.get('zoom')) : 4
 }
 
 const colors = {
@@ -74,10 +83,6 @@ const drawGlyphs = regl({
       buffer: regl.prop('labelCharLengh'),
       divisor: 1,
     },
-    thetaOffset: {
-      buffer: regl.prop('thetaOffset'),
-      divisor: 1,
-    },
     radiusOffset: {
       buffer: regl.prop('radiusOffset'),
       divisor: 1,
@@ -86,18 +91,26 @@ const drawGlyphs = regl({
       buffer: regl.prop('radiusRange'),
       divisor: 1,
     },
+    radiusRangeOffset: {
+      buffer: regl.prop('radiusRangeOffset'),
+      divisor: 1,
+    },
     fontSize: {
       buffer: regl.prop('fontSize'),
       divisor: 1,
     },
-    thetaRange: {
-      buffer: regl.prop('thetaRange'),
+    thetaRangeOffset: {
+      buffer: regl.prop('thetaRangeOffset'),
       divisor: 1,
     },
     glyphOffsetScalar: {
       buffer: regl.prop('glyphOffsetScalar'),
       divisor: 1,
     },
+    labelZoomIndexCount: {
+      buffer: regl.prop('labelZoomIndexCount'),
+      divisor: 1,
+    }
   },
   elements: [[0, 1, 2], [0, 2, 3]],
   primitive: 'triangles',
@@ -115,6 +128,7 @@ const drawGlyphs = regl({
     labelTexDim: (context, props) =>{
       return [props.glyphsTexture.width, props.glyphsTexture.height]
     },
+    feezeZoom: params.zoom,
   },
   vert: `
     precision highp float;
@@ -128,18 +142,18 @@ const drawGlyphs = regl({
     attribute float speed;
     attribute float fontSize;
     attribute float labelCharLengh;
-    attribute float thetaOffset;
-    attribute float radiusOffset;
-    attribute vec2 radiusRange;
+    attribute vec3 radiusRangeOffset;
     attribute float glyphRasterTop;
-    attribute vec2 thetaRange;
+    attribute vec3 thetaRangeOffset;
     attribute float glyphInLabelStringIndex;
     attribute vec2 glyphOffsetScalar;
+    attribute vec3 labelZoomIndexCount;
     uniform float tick, aspect, pixelRatio;
     uniform vec2 screenDim;
     uniform vec2 labelTexDim;
     varying vec2 tcoord;
     varying float vNormalizedRadius;
+    varying vec3 vLabelZoomIndexCount;
     
     const float PI = ${Math.PI};
 
@@ -151,6 +165,12 @@ const drawGlyphs = regl({
     }
 
     void main () {
+      vLabelZoomIndexCount = labelZoomIndexCount;
+      vec2 thetaRange = thetaRangeOffset.xy;
+      float thetaOffset = thetaRangeOffset.z;
+      vec2 radiusRange = radiusRangeOffset.xy;
+      float radiusOffset = radiusRangeOffset.z;
+
       float rate = speed * tick;
       float normalizeRadius = mod(rate + radiusOffset, 1.0);
       vNormalizedRadius = normalizeRadius;
@@ -168,21 +188,17 @@ const drawGlyphs = regl({
         -radiusMidpoint
       );
       
-      float glyphIndexNormalized = glyphInLabelStringIndex/labelCharLengh;
-
       vec2 thetaScalar = vec2(thetaRange.x, thetaRange.y);
       float theta = mix(
         0., PI,
         1.0 - smoothstep(
           thetaScalar.x, thetaScalar.y,
           (glyphInLabelStringIndex + (1.0/labelCharLengh)) * 2.0 - 1.0));
-
-      // float theta = mix(thetaRange.x, thetaRange.y, 1.0 - glyphIndexNormalized);
       
       theta += thetaOffset;
       vec2 thetaXYUnit = vec2(cos(theta), sin(theta));
       vec2 glyphOffset = thetaXYUnit * vec2(aspect, 1.0) * vec2(
-        0.6,
+        0.4,
         ((glyphRasterTop - glyphRasterDim.y) / labelDim.y)
       ) * glyphOffsetScalar;
       vec2 radialOffset = thetaXYUnit * radius;
@@ -204,13 +220,50 @@ const drawGlyphs = regl({
     precision highp float;
     uniform sampler2D glyphsTexture;
     uniform float fillDist;
+    uniform float tick;
+    uniform float feezeZoom;
     uniform vec4 fillColor, haloColor;
     varying vec2 tcoord;
     varying float vNormalizedRadius;
+    varying vec3 vLabelZoomIndexCount;
+
+    const float maxZoom = 3.0;
 
     #pragma glslify: random = require('glsl-random')
 
     void main () {
+      float labelZoom = vLabelZoomIndexCount.x;
+      float labelIndex = vLabelZoomIndexCount.y;
+      float labelCount = vLabelZoomIndexCount.z;
+
+      float rate = tick * 0.005;
+      // flip through zoom levels
+      // 18
+      float tweenRangeHalf = pow(maxZoom, 2.0);
+      float tweenRange = tweenRangeHalf * 2.0;
+      // current value in this range
+      float tweenValue = mod(rate, tweenRange);
+      // we have a tween value between 0-18
+      // we grow from zoom 0 - 3 from tweenValue 0 - 9
+      // we shrink zoom 3 - 0 from tweenValue 9 - 18
+      // 9 -> 3
+      // 10 -> 8 -> 2.8
+      if (tweenValue > tweenRangeHalf) {
+        // 18 - 10 = 8
+        // 18 - 11 = 7
+        // ...
+        tweenValue = tweenRange - tweenValue;
+      }
+      float showZoom = sqrt(tweenValue);
+      if (feezeZoom < 3.5) {
+        showZoom = feezeZoom;
+      }
+      // show all zoom leves at once
+      // float showZoom = 0.5;
+      
+      // incrementally reveal
+      float reveal = step(1.0 - fract(showZoom), labelIndex/labelCount);
+
       vec4 sample = texture2D(glyphsTexture, tcoord);
       float fill = step(fillDist, sample.a);
       vec4 baseColor = vec4(0.0);
@@ -239,6 +292,22 @@ const drawGlyphs = regl({
         baseColor,
         step(randomThreshold, hiddenThreshold)
       );
+      // 
+      if (showZoom > 2.0 && labelZoom >= 3.0 && reveal < 0.5) {
+        color.w = 0.0;
+      }
+      else if (showZoom > 2.0 && labelZoom < 3.0) {
+        color.w = 0.0;
+      }
+      else if ((showZoom < 2.0 && showZoom > 1.0) && (labelZoom > 1.9 && labelZoom < 2.1) && reveal < 0.5) {
+        color.w = 0.0;
+      }
+      else if ((showZoom < 2.0 && showZoom > 1.0) && (labelZoom > 2.1 || labelZoom < 1.9)) {
+        color.w = 0.0;
+      }
+      else if ((showZoom <= 1.0 && showZoom >= 0.0) && labelZoom > 1.0) {
+        color.w = 0.0;
+      }
       gl_FragColor = vec4(color.xyzw);
     }
   `,
@@ -253,17 +322,16 @@ const drawGlyphs = regl({
 })
 
 function markLabels (mark) {
-  switch (params.zoom) {
-    case 1: return markLabelsZoom1(mark)
-    case 2: return markLabelsZoom2(mark)
-    case 3: return markLabelsZoom3(mark)
-  }
+  return markLabelsZoom1(mark)
+    .concat(markLabelsZoom2(mark))
+    .concat(markLabelsZoom3(mark))
 }
 
 // given a screen size, return a single mark in the middle of the screen
 // the font size should be proportional to the window size. the shorder side
 // of the two
 function markLabelsZoom1 (mark) {
+  const zoom = 1
   let shorterSide = Math.min(window.innerWidth, window.innerHeight)
   let fontSize
   if (window.innerWidth < window.innerHeight) {
@@ -275,25 +343,24 @@ function markLabelsZoom1 (mark) {
   fontSize = Math.min(fontSize, 124)
 
   const baseLabel = (opts={}) => {
+    const radiusOffset = 0.4
     return {
       text: mark,
       labelCharLengh: mark.length,
       anchor: [-1.0, 0.0],
       speed: 0.005,
-      thetaOffset: +Math.PI/20,
-      radiusOffset: 0.4,
       fontSize,
-      thetaRange: [-3, 3],
-      radiusRange: [0.1, 0.7],
+      thetaRangeOffset: [-3, 3, opts.thetaOffset || +Math.PI/20],
+      radiusRangeOffset: [0.1, 0.7, opts.radiusOffset || radiusOffset],
       glyphOffsetScalar: [1.0, 0.3],
+      labelZoomIndexCount: [1, 0, 1],
       ...opts,
     }
   }
   const labels = [
-    baseLabel({ radiusOffset: 0.0, thetaOffset: +Math.PI * 0.25 }),
-    baseLabel({ radiusOffset: 0.5, thetaOffset: +Math.PI * 0.3 }),
+    baseLabel({ radiusOffset: 0.10, thetaOffset: +Math.PI * 0.25 }),
+    baseLabel({ radiusOffset: 0.51, thetaOffset: +Math.PI * 0.3 }),
   ]
-
   return labels
 }
 
@@ -311,9 +378,6 @@ function dim ({ zoom, mark, maxFontSize }) {
     rows = Math.floor(window.innerHeight/fontSize/density)
     cols = Math.max(1, Math.floor(window.innerWidth / (fontSize * mark.length)))
   }
-  console.log({ fontSize })
-  console.log({ rows })
-  console.log({ cols })
   return { rows, cols, fontSize}
 }
 
@@ -323,20 +387,19 @@ function markLabelsZoom2 (mark) {
   const { rows, cols, fontSize } = dim({
     zoom,
     mark,
-    maxFontSize: 48,  
+    maxFontSize: 48,
   })
 
   const baseLabel = (opts={}) => {
+    const radiusOffset = 0.4
     return {
       text: mark,
       labelCharLengh: mark.length,
       anchor: [-0.2, -0.2],
       speed: 0.008,
-      thetaOffset: +Math.PI/20,
-      radiusOffset: 0.4,
       fontSize,
-      thetaRange: [-4, 4],
-      radiusRange: [0.0, 0.4],
+      thetaRangeOffset: [-4, 4, opts.thetaOffset || +Math.PI/20],
+      radiusRangeOffset: [0.0, 0.4, opts.radiusOffset || radiusOffset],
       glyphOffsetScalar: [1.0, 0.03],
       ...opts,
     }
@@ -361,8 +424,9 @@ function markLabelsZoom2 (mark) {
     ]
   }
 
-  const aspect = window.innerWidth / window.innerHeight
   let labelOpts = []
+  const revealIndicies = []
+  let labelCount = 0
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       labelOpts.push({
@@ -372,7 +436,15 @@ function markLabelsZoom2 (mark) {
         ],
         glyphOffsetScalar: [1.0, 0.08],
       })
+      revealIndicies.push(labelCount)
+      labelCount += 1
     }
+  }
+  for (let i = 0; i < labelOpts.length; i++) {
+    const randomRevealIndex = Math.floor(Math.random() * revealIndicies.length)
+    const revealIndexValue = revealIndicies[randomRevealIndex]
+    labelOpts[i].labelZoomIndexCount = [zoom, revealIndexValue, labelCount]
+    revealIndicies.splice(randomRevealIndex, 1)
   }
 
   const labels = labelOpts.map(labelOpt => labelPair(labelOpt)).flat()
@@ -385,20 +457,19 @@ function markLabelsZoom3 (mark) {
   const { rows, cols, fontSize } = dim({
     zoom,
     mark,
-    maxFontSize: 48  
+    maxFontSize: 12,  
   })
 
   const baseLabel = (opts={}) => {
+    const radiusOffset = 0.4;
     return {
       text: mark,
       labelCharLengh: mark.length,
       anchor: [-0.2, -0.2],
       speed: 0.008,
-      thetaOffset: +Math.PI/20,
-      radiusOffset: 0.4,
       fontSize,
-      thetaRange: [-4.0, 4.0],
-      radiusRange: [0.0, 0.3],
+      thetaRangeOffset: [-2.0, 2.0, opts.thetaOffset || +Math.PI/20],
+      radiusRangeOffset: [0.0, 0.1, opts.radiusOffset || radiusOffset],
       glyphOffsetScalar: [1.0, 0.2],
       ...opts,
     }
@@ -426,18 +497,29 @@ function markLabelsZoom3 (mark) {
       }),
     ]
   }
-  const aspect = window.innerWidth / window.innerHeight
+
   let labelOpts = []
+  const revealIndicies = []
+  let labelCount = 0
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
+      const xGitter = Math.random() * 0.3 - 0.15
       labelOpts.push({
         anchor: [
-          x/cols * 2.0 - 1.0,
+          x/cols * 2.0 - 1.0 + xGitter,
           y/rows * 2.0 - 1.0,
         ],
         glyphOffsetScalar: [1.0, 0.08],
       })
+      revealIndicies.push(labelCount)
+      labelCount += 1
     }
+  }
+  for (let i = 0; i < labelOpts.length; i++) {
+    const randomRevealIndex = Math.floor(Math.random() * revealIndicies.length)
+    const revealIndexValue = revealIndicies[randomRevealIndex]
+    labelOpts[i].labelZoomIndexCount = [zoom, revealIndexValue, labelCount]
+    revealIndicies.splice(randomRevealIndex, 1)
   }
 
   const labels = labelOpts.map(labelOpt => labelPair(labelOpt)).flat()
@@ -472,12 +554,11 @@ function markLabelsZoom3 (mark) {
           props.labelCharLengh = new Float32Array(size * 1)
           props.anchor = new Float32Array(size * 2)
           props.speed = new Float32Array(size * 1)
-          props.thetaOffset = new Float32Array(size * 1)
-          props.thetaRange = new Float32Array(size * 2)
-          props.radiusOffset = new Float32Array(size * 1)
+          props.thetaRangeOffset = new Float32Array(size * 3)
+          props.radiusRangeOffset = new Float32Array(size * 3)
           props.fontSize = new Float32Array(size * 1)
-          props.radiusRange = new Float32Array(size * 2)
           props.glyphOffsetScalar = new Float32Array(size * 2)
+          props.labelZoomIndexCount = new Float32Array(size * 3)
         },
         onGlyph: ({ props, labelIndex, charIndex, glyphIndex }) => {
           const label = labels[labelIndex]
@@ -485,15 +566,18 @@ function markLabelsZoom3 (mark) {
           props.anchor[glyphIndex * 2 + 0] = label.anchor[0]
           props.anchor[glyphIndex * 2 + 1] = label.anchor[1]
           props.speed[glyphIndex * 1 + 0] = label.speed
-          props.thetaOffset[glyphIndex * 1 + 0] = label.thetaOffset
-          props.thetaRange[glyphIndex * 2 + 0] = label.thetaRange[0]
-          props.thetaRange[glyphIndex * 2 + 1] = label.thetaRange[1]
-          props.radiusRange[glyphIndex * 2 + 0] = label.radiusRange[0]
-          props.radiusRange[glyphIndex * 2 + 1] = label.radiusRange[1]
-          props.radiusOffset[glyphIndex * 1 + 0] = label.radiusOffset
+          props.thetaRangeOffset[glyphIndex * 3 + 0] = label.thetaRangeOffset[0]
+          props.thetaRangeOffset[glyphIndex * 3 + 1] = label.thetaRangeOffset[1]
+          props.thetaRangeOffset[glyphIndex * 3 + 2] = label.thetaRangeOffset[2]
+          props.radiusRangeOffset[glyphIndex * 3 + 0] = label.radiusRangeOffset[0]
+          props.radiusRangeOffset[glyphIndex * 3 + 1] = label.radiusRangeOffset[1]
+          props.radiusRangeOffset[glyphIndex * 3 + 2] = label.radiusRangeOffset[2]
           props.fontSize[glyphIndex * 1 + 0] = label.fontSize
           props.glyphOffsetScalar[glyphIndex * 2 + 0] = label.glyphOffsetScalar[0]
           props.glyphOffsetScalar[glyphIndex * 2 + 1] = label.glyphOffsetScalar[1]
+          props.labelZoomIndexCount[glyphIndex * 3 + 0] = label.labelZoomIndexCount[0]
+          props.labelZoomIndexCount[glyphIndex * 3 + 1] = label.labelZoomIndexCount[1]
+          props.labelZoomIndexCount[glyphIndex * 3 + 2] = label.labelZoomIndexCount[2]
         },
       }
     })

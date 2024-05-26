@@ -38,7 +38,9 @@ const params = {
   // 0 - 1 values freeze on a specific zoom
   // -1 shows all zooms at once :)
   // > 1 loops through all indicies
-  zoom: searchParams.has('zoom') ? parseFloat(searchParams.get('zoom')) : 2
+  zoom: searchParams.has('zoom') ? parseFloat(searchParams.get('zoom')) : 2,
+  // 0-1 value
+  bias: searchParams.has('bias') ? parseFloat(searchParams.get('bias')) : 0.1,
 }
 console.log({params})
 
@@ -141,6 +143,7 @@ const drawGlyphs = regl({
       return [props.glyphsTexture.width, props.glyphsTexture.height]
     },
     freezeZoom: params.zoom,
+    bias: params.bias,
   },
   vert: `
     precision highp float;
@@ -235,6 +238,7 @@ const drawGlyphs = regl({
     uniform float fillDist;
     uniform float tick;
     uniform float freezeZoom;
+    uniform float bias;
     uniform vec4 fillColor, haloColor;
     varying vec2 tcoord;
     varying float vNormalizedRadius;
@@ -297,7 +301,7 @@ const drawGlyphs = regl({
       );
 
       // zoom3Range used directly
-      float reveal = step(labelIndex/labelCount, getBias(tweenValue, 0.2));
+      float reveal = step(labelIndex/labelCount, getBias(tweenValue, bias));
 
       if (tweenValue < 0.0) {
         reveal = 1.0;

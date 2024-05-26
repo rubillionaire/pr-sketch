@@ -115,10 +115,6 @@ const drawGlyphs = regl({
       buffer: regl.prop('thetaRangeOffsetScalar'),
       divisor: 1,
     },
-    glyphOffsetScalar: {
-      buffer: regl.prop('glyphOffsetScalar'),
-      divisor: 1,
-    },
     labelZoomIndexCount: {
       buffer: regl.prop('labelZoomIndexCount'),
       divisor: 1,
@@ -158,7 +154,6 @@ const drawGlyphs = regl({
     attribute float glyphRasterTop;
     attribute vec4 thetaRangeOffsetScalar;
     attribute float glyphInLabelStringIndex;
-    attribute vec2 glyphOffsetScalar;
     attribute vec3 labelZoomIndexCount;
     uniform float tick, aspect, pixelRatio;
     uniform vec2 screenDim;
@@ -379,7 +374,6 @@ function markLabelsZoom1 (mark) {
       fontSize,
       thetaRangeOffsetScalar: [0.0, Math.PI, opts.thetaOffset || +Math.PI/20, 3.0],
       radiusRangeOffset: [0.1, 0.7, opts.radiusOffset || radiusOffset],
-      glyphOffsetScalar: [1.0, 0.3],
       labelZoomIndexCount: [1, 0, 1],
       ...opts,
     }
@@ -427,7 +421,6 @@ function markLabelsZoom2 (mark) {
       fontSize,
       thetaRangeOffsetScalar: [0, Math.PI, opts.thetaOffset || +Math.PI/20, 3.0],
       radiusRangeOffset: [0.0, 0.4, opts.radiusOffset || radiusOffset],
-      glyphOffsetScalar: [1.0, 0.14],
       ...opts,
     }
   }
@@ -497,7 +490,6 @@ function markLabelsZoom3 (mark) {
       fontSize,
       thetaRangeOffsetScalar: [-1.0, 1.0, opts.thetaOffset || +Math.PI/20, 6.0],
       radiusRangeOffset: [0.0, 0.2, opts.radiusOffset || radiusOffset],
-      glyphOffsetScalar: [1.0, 0.03],
       ...opts,
     }
   }
@@ -586,7 +578,6 @@ function markLabelsZoom3 (mark) {
           props.thetaRangeOffsetScalar = new Float32Array(size * 4)
           props.radiusRangeOffset = new Float32Array(size * 3)
           props.fontSize = new Float32Array(size * 1)
-          props.glyphOffsetScalar = new Float32Array(size * 2)
           props.labelZoomIndexCount = new Float32Array(size * 3)
         },
         onGlyph: ({ props, labelIndex, charIndex, glyphIndex }) => {
@@ -603,8 +594,6 @@ function markLabelsZoom3 (mark) {
           props.radiusRangeOffset[glyphIndex * 3 + 1] = label.radiusRangeOffset[1]
           props.radiusRangeOffset[glyphIndex * 3 + 2] = label.radiusRangeOffset[2]
           props.fontSize[glyphIndex * 1 + 0] = label.fontSize
-          props.glyphOffsetScalar[glyphIndex * 2 + 0] = label.glyphOffsetScalar[0]
-          props.glyphOffsetScalar[glyphIndex * 2 + 1] = label.glyphOffsetScalar[1]
           props.labelZoomIndexCount[glyphIndex * 3 + 0] = label.labelZoomIndexCount[0]
           props.labelZoomIndexCount[glyphIndex * 3 + 1] = label.labelZoomIndexCount[1]
           props.labelZoomIndexCount[glyphIndex * 3 + 2] = label.labelZoomIndexCount[2]

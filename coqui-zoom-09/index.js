@@ -44,9 +44,19 @@ const params = {
 }
 console.log({params})
 
+// yellow hsluvLight: [79.9, 100.0, 94.9].concat([255.0]),
+// yellow hsluvDark: [79.9, 100.0, 35.0].concat([255.0]),
+// blue hsluvLight: [250.8, 100.0, 65.6]
+// blue hsluvDark: [250.8, 100.0, 5]
+// green hsluv light: [104.2, 100, 50]
+// green hsluv dark: [104.2, 100, 16]
 const colors = {
-  light: [255, 243, 135].concat([255.0]),
-  dark: [90, 84, 0].concat([255.0]),
+  /// yellow
+  // light: [255, 243, 135, 255],
+  // dark: [90, 84, 0, 255],
+  /// green
+  light: [79, 103, 0].concat([255.0]),
+  dark: [32, 44, 0].concat([255.0]),
 }
 colors.glslLight = colors.light.map(c => c/255.0)
 colors.glslDark = colors.dark.map(c => c/255.0)

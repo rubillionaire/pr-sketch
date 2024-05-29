@@ -55,7 +55,7 @@ const colors = {
   // light: [255, 243, 135, 255],
   // dark: [90, 84, 0, 255],
   /// green
-  light: [79, 103, 0].concat([255.0]),
+  light: [110, 143, 0].concat([255.0]),
   dark: [32, 44, 0].concat([255.0]),
 }
 colors.glslLight = colors.light.map(c => c/255.0)

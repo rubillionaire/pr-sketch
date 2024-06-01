@@ -7,7 +7,7 @@ const regl = require('regl')
 const resl = require('resl')
 const geojson2mesh = require('earth-mesh')
 const cityJson = require('../util/pr-cities-population-2024.json')
-const { Atlas } = require('tiny-label')
+const { Atlas } = require('tiny-atlas')
 
 const mix = mixmap(regl, {
   extensions: ['oes_element_index_uint'],

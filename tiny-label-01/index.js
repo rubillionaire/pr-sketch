@@ -91,145 +91,152 @@ async function drawText () {
   })
   const props = geodata.update(map.zoom)
   const textProps = text.update(props, map)
-  console.log({textProps})
+  console.log(textProps.atlas.glyphs[0].glyphRasterDim)
+  console.log(textProps.atlas.glyphs[0].labelDim)
 
-  const draw = {}
   const shaders = Shaders(map)
-  for (const shader in shaders) {
-    draw[shader] = map.regl(shaders[shader])
+  const draw = {
+    outlines: map.regl(shaders.outlines),
+    text: map.regl(shaders.text(textProps.atlas)),
+  }
+
+  for (let i = 0; i < textProps.atlas.glyphs.length; i++) {
+    for (const mapProps of map._props()) {
+      textProps.atlas.glyphs[i] = Object.assign(textProps.atlas.glyphs[i], mapProps)
+    }
   }
 
   const drawWithMap = () => {
     for (const mapProps of map._props()) {
       draw.outlines({
         ...mapProps,
-        ...textProps,
+        ...textProps.labelEngine,
         color: [0, 1, 0],
         zindex: 1000,
-      }) 
+      })
+      draw.text(textProps.atlas.glyphs)
     }
   }
 
   map.on('draw:end', drawWithMap)
-
+  map.draw()
   return {
     draw: drawWithMap,
   }
 }
 drawText()
 
-// const drawGlyphs = map.createDraw({
-//   attributes: {
-//     position: [
-//       -1, -1,
-//       1, -1,
-//       -1, 1,
-//       1, 1]
-//   },
-//   count: 4,
-//   primitive: 'triangle strip',
-//   uniforms: {
-//     glyphsTexture, 
-//     fillDist: 0.6,
-//     haloDist: 0.2,
-//     fillColor: [1, 1, 1, 1],
-//     haloColor: [0, 0, 0, 1],
-//     screenDim: (context) => [context.viewportWidth, context.viewportHeight],
-//     aspect: (context) => context.viewportWidth/context.viewportHeight,
-//     pixelRatio: () => window.devicePixelRatio,
-//     zindex: 100,
-//     fontSize: 18,
-//     anchor: map.prop('anchor'),
-//     glyphInLabelStringIndex: map.prop('glyphInLabelStringIndex'),
-//     glyphInLabelStringOffset: map.prop('glyphInLabelStringOffset'),
-//     labelDim: map.prop('labelDim'),
-//     glyphTexOffset: map.prop('glyphTexOffset'),
-//     glyphTexDim: map.prop('glyphTexDim'),
-//     glyphRasterDim: map.prop('glyphRasterDim'),
-//     glyphRasterHeight: map.prop('glyphRasterHeight'),
-//     glyphRasterTop: map.prop('glyphRasterTop'),
-//     letterSpacing: 0.8,
-//     labelTexDim: [texture.width, texture.height],
-//   },
-//   vert: `
-//     precision highp float;
-//     attribute vec2 position;
-//     uniform float aspect, zindex, fontSize, pixelRatio;
-//     uniform float glyphRasterTop;
-//     uniform float letterSpacing;
-//     uniform float glyphInLabelStringIndex;
-//     uniform vec2 anchor;
-//     uniform vec2 glyphRasterDim;
-//     uniform vec2 screenDim;
-//     uniform vec2 glyphInLabelStringOffset;
-//     uniform vec2 labelDim;
-//     uniform vec2 glyphTexOffset;
-//     uniform vec2 glyphTexDim;
-//     uniform vec2 labelTexDim;
-//     uniform vec4 viewbox;
-//     varying vec2 tcoord;
-//     void main () {
-//       vec2 uv = position * 0.5 + 0.5;
+const drawGlyphs = {
+  attributes: {
+    position: [
+      -1, -1,
+      1, -1,
+      -1, 1,
+      1, 1]
+  },
+  count: 4,
+  primitive: 'triangle strip',
+  uniforms: {
+    // glyphsTexture, 
+    fillDist: 0.6,
+    haloDist: 0.2,
+    fillColor: [1, 1, 1, 1],
+    haloColor: [0, 0, 0, 1],
+    screenDim: (context) => [context.viewportWidth, context.viewportHeight],
+    aspect: (context) => context.viewportWidth/context.viewportHeight,
+    pixelRatio: () => window.devicePixelRatio,
+    zindex: 100,
+    fontSize: 18,
+    anchor: map.prop('anchor'),
+    glyphInLabelStringIndex: map.prop('glyphInLabelStringIndex'),
+    glyphInLabelStringOffset: map.prop('glyphInLabelStringOffset'),
+    labelDim: map.prop('labelDim'),
+    glyphTexOffset: map.prop('glyphTexOffset'),
+    glyphTexDim: map.prop('glyphTexDim'),
+    glyphRasterDim: map.prop('glyphRasterDim'),
+    glyphRasterHeight: map.prop('glyphRasterHeight'),
+    glyphRasterTop: map.prop('glyphRasterTop'),
+    letterSpacing: 0.8,
+    // labelTexDim: [texture.width, texture.height],
+  },
+  vert: `
+    precision highp float;
+    attribute vec2 position;
+    uniform float aspect, zindex, fontSize, pixelRatio;
+    uniform float glyphRasterTop;
+    uniform float letterSpacing;
+    uniform float glyphInLabelStringIndex;
+    uniform vec2 anchor;
+    uniform vec2 glyphRasterDim;
+    uniform vec2 screenDim;
+    uniform vec2 glyphInLabelStringOffset;
+    uniform vec2 labelDim;
+    uniform vec2 glyphTexOffset;
+    uniform vec2 glyphTexDim;
+    uniform vec2 labelTexDim;
+    uniform vec4 viewbox;
+    varying vec2 tcoord;
+    void main () {
+      vec2 uv = position * 0.5 + 0.5;
 
-//       vec2 labelScaledFontSize = vec2(
-//         fontSize * pixelRatio * labelDim.x / labelDim.y,
-//         fontSize * pixelRatio
-//       );
-//       vec2 labelScaledScreen = labelScaledFontSize / screenDim * pixelRatio;
-//       vec2 glyphScale = glyphRasterDim / labelDim * labelScaledScreen;
-//       vec2 glyphOffset = vec2(
-//         glyphInLabelStringOffset.x / labelDim.x * letterSpacing * labelScaledScreen.x,
-//         (glyphRasterTop - glyphRasterDim.y) / labelDim.y * labelScaledScreen.y
-//       );
+      vec2 labelScaledFontSize = vec2(
+        fontSize * pixelRatio * labelDim.x / labelDim.y,
+        fontSize * pixelRatio
+      );
+      vec2 labelScaledScreen = labelScaledFontSize / screenDim * pixelRatio;
+      vec2 glyphScale = glyphRasterDim / labelDim * labelScaledScreen;
+      vec2 glyphOffset = vec2(
+        glyphInLabelStringOffset.x / labelDim.x * letterSpacing * labelScaledScreen.x,
+        (glyphRasterTop - glyphRasterDim.y) / labelDim.y * labelScaledScreen.y
+      );
 
-//       vec2 p = uv * glyphScale + glyphOffset + anchor;
-//       gl_Position = vec4(
-//         (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-//         ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
-//         1.0/(1.0+zindex),
-//         1
-//       );
-//       // this should be our position's within the texSize [[0, 1], [0, 1]]
-//       // tcoord: (texOffset + (texDim * uv)) / texSize
-//       vec2 flippedUv = vec2(uv.x, 1.0 - uv.y);
-//       tcoord = (glyphTexOffset + (glyphTexDim * flippedUv)) / labelTexDim;
-//     }
-//   `,
-//   frag: `
-//     precision highp float;
-//     uniform sampler2D glyphsTexture;
-//     uniform float fillDist, haloDist;
-//     uniform vec4 fillColor, haloColor;
-//     varying vec2 tcoord;
-//     void main () {
-//       vec4 sample = texture2D(glyphsTexture, tcoord);
-//       float fill = step(fillDist, sample.a);
-//       float halo = step(fillDist, sample.a) + step(fillDist + haloDist, sample.a);
-//       vec4 color = vec4(0.0);
-//       if (halo == 1.0) {
-//         color = haloColor;
-//       }
-//       else if (fill == 1.0) {
-//         color = fillColor;
-//       }
-//       else {
-//         discard;
-//         return;
-//       }
-//       gl_FragColor = vec4(color.xyzw);
-//     }
-//   `,
-//   blend: {
-//     enable: true,
-//     func: {
-//       srcRGB: 'src alpha',
-//       srcAlpha: 1,
-//       dstRGB: 'one minus src alpha',
-//       dstAlpha: 1
-//     }
-//   },
-// })
-// drawGlyphs.props = glyphs
+      vec2 p = uv * glyphScale + glyphOffset + anchor;
+      gl_Position = vec4(
+        (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
+        ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
+        1.0/(1.0+zindex),
+        1
+      );
+      // this should be our position's within the texSize [[0, 1], [0, 1]]
+      // tcoord: (texOffset + (texDim * uv)) / texSize
+      vec2 flippedUv = vec2(uv.x, 1.0 - uv.y);
+      tcoord = (glyphTexOffset + (glyphTexDim * flippedUv)) / labelTexDim;
+    }
+  `,
+  frag: `
+    precision highp float;
+    uniform sampler2D glyphsTexture;
+    uniform float fillDist, haloDist;
+    uniform vec4 fillColor, haloColor;
+    varying vec2 tcoord;
+    void main () {
+      vec4 sample = texture2D(glyphsTexture, tcoord);
+      float fill = step(fillDist, sample.a);
+      float halo = step(fillDist, sample.a) + step(fillDist + haloDist, sample.a);
+      vec4 color = vec4(0.0);
+      if (halo == 1.0) {
+        color = haloColor;
+      }
+      else if (fill == 1.0) {
+        color = fillColor;
+      }
+      else {
+        discard;
+        return;
+      }
+      gl_FragColor = vec4(color.xyzw);
+    }
+  `,
+  blend: {
+    enable: true,
+    func: {
+      srcRGB: 'src alpha',
+      srcAlpha: 1,
+      dstRGB: 'one minus src alpha',
+      dstAlpha: 1
+    }
+  },
+}
 
 const drawNE = map.createDraw({
   attributes: {

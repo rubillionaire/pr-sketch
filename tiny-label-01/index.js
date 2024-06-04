@@ -91,8 +91,6 @@ async function drawText () {
   })
   const props = geodata.update(map.zoom)
   const textProps = text.update(props, map)
-  console.log(textProps.atlas.glyphs[0].glyphRasterDim)
-  console.log(textProps.atlas.glyphs[0].labelDim)
 
   const shaders = Shaders(map)
   const draw = {

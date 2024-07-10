@@ -58,8 +58,8 @@ const drawGlyphs = map.createDraw({
   primitive: 'triangle strip',
   uniforms: {
     glyphsTexture, 
-    fillDist: 0.6,
-    haloDist: 0.2,
+    fillDist: 0.25,
+    haloDist: 0.6,
     fillColor: [1, 1, 1, 1],
     haloColor: [0, 0, 0, 1],
     screenDim: (context) => [context.viewportWidth, context.viewportHeight],

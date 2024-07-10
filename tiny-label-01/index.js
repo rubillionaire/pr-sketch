@@ -5,16 +5,28 @@
 // - 01
 // - explore what label placement engine output from
 //   `tiny-label` looks like
+// - `tiny-label` @ git hash `04871dc`
+// - `georender-style2png` @ git hash `1a676fa`
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
 const geojson2mesh = require('earth-mesh')
 const cityJson = require('../util/pr-cities-population-2024.json')
-const { defaultTextOpts, Text, Shaders } = require('tiny-label')
+const neJson = require('../public/ne-10m-land-pr.json')
+const { defaultLabelOpts, Label, Shaders: LabelShaders } = require('tiny-label')
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
 const decode = require('@rubenrodriguez/georender-pack/decode')
 const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
-const getImagePixels = require('get-image-pixels')
+const { default: GeorenderShaders } = require('@rubenrodriguez/mixmap-georender')
+const makeTexture = require('../util/make-texture')
+
+const searchParams = new URLSearchParams(window.location.search)
+const params = {
+  display: searchParams.has('display')
+    ? searchParams.get('display').split(',').map(s => parseInt(s))
+    : null
+}
+console.log({params})
 
 const mix = mixmap(regl, {
   extensions: ['oes_element_index_uint'],
@@ -52,55 +64,116 @@ document.body.appendChild(map.render({
   height: window.innerHeight,
 }))
 
-async function drawText () {
-  const text = new Text({
-    ...defaultTextOpts,
-    labelEngine: {
-      ...defaultTextOpts.labelEngine,
-      outlines: true,
-    }  
-  })
-  const style = await (() => {
-    const img = new Image()
-    const p = new Promise((resolve, reject) => {
-      img.onerror = function (error) {
-        reject(error)
-      }
-      img.onload = function () {
-        resolve(img)
-      }
-    })
-    img.src = './style-textures/pr-radiating-coastline.png'
-    return p
-  })()
+async function drawLabels () {
+  const stylesheet = {
+    'place.island': {
+      'area-fill-color': '#ee0066',
+      'area-label-fill-color': '#000000',
+      // 'area-label-font': 'Helvetica',
+      'area-label-font-size': 19,
+      'area-label-stroke-width': 3,
+      'area-zindex': 8,
+      'area-opacity': 99,
+    },
+    'place.city': {
+      'point-label-font': 'Helvetica',
+      'point-label-fill-color': '#000000',
+      'point-label-fill-opacity': 100,
+      'point-label-font-size': 16,
+      'point-label-stroke-width': 3,
+      'point-size': 10,
+    },
+    'place.town': {
+      'point-label-font': 'Helvetica',
+      'point-label-fill-color': '#000000',
+      'point-label-fill-opacity': 100,
+      'point-label-font-size': 12,
+      'point-label-stroke-width': 3,
+      'point-size': 8,
+    },
+    'highway.path': {
+      'line-label-font': 'Helvetica',
+      'line-label-font-size': 10,
+      'line-label-stroke-width': 2,
+      'line-label-priority': 10,
+      'line-zindex': 20,
+    },
+  }
+  const style = await makeTexture(stylesheet)
 
-  const cityGeojson = asGeojson(cityJson)
+  const label = new Label({
+    labelEngine: {
+      ...defaultLabelOpts.labelEngine,
+      outlines: true,
+    },
+    fontFamily: style.labelFontFamily,
+  })
+
+  const cityGeojson = cityToOSM(cityJson)
+  const neGeojson = neToOSM(neJson)
+  const cityPathsGeojson = cityToLineString(cityJson)
+  const geojsons = []
+  if (params.display === null) {
+    geojsons.push(cityGeojson, neGeojson, cityPathsGeojson)
+  }
+  if (params.display?.includes(0)) {
+    geojsons.push(cityGeojson)
+  }
+  if (params.display?.includes(1)) {
+    geojsons.push(neGeojson)
+  }
+  if (params.display?.includes(2)) {
+    geojsons.push(cityPathsGeojson)
+  }
+
+  const geojson = mergeFeatures(...geojsons)
+  // const geojson = mergeFeatures(cityPathsGeojson)
+
   // i need data in the shape of georender point labels
-  const georender = toGeorender(cityGeojson)
+  const georender = toGeorender(geojson)
   const decodedToMerge = georender.map((buf) => {
     return decode([buf])
   })
   const decoded = mergeDecoded(decodedToMerge)
-  const stylePixels = getImagePixels(style)
-  const styleTexture = map.regl.texture(style)
+  const stylePixels = {
+    data: style.data,
+    width: style.width,
+    height: style.height,
+  }
+  const styleTexture = map.regl.texture(stylePixels)
   const geodata = prepare({
     stylePixels,
     styleTexture,
     imageSize: [style.width, style.height],
     decoded,
+    zoomStart: 1,
+    zoomEnd: 21,
   })
   const props = geodata.update(map.zoom)
-  const textProps = text.update(props, map)
+  console.log({props})
+  const labelProps = label.update(props, map, { style })
+  console.log({labelProps})
 
-  const shaders = Shaders(map)
+  const labelShaders = LabelShaders(map)
+  const georenderShaders = GeorenderShaders(map)
+  const areasShader = georenderShaders.areas
+  const lineFillShader = georenderShaders.lineFill
+  delete areasShader.pickFrag
+  delete lineFillShader.pickFrag
+  mapUniforms(areasShader)
+  mapUniforms(lineFillShader)
   const draw = {
-    outlines: map.regl(shaders.outlines),
-    text: map.regl(shaders.text(textProps.atlas)),
+    outlines: map.regl(labelShaders.outlines),
+    label: labelProps.atlas.map((prepared) => map.regl(labelShaders.label(prepared))),
+    areas: map.regl(areasShader),
+    linesFill: map.regl(lineFillShader),
   }
 
-  for (let i = 0; i < textProps.atlas.glyphs.length; i++) {
-    for (const mapProps of map._props()) {
-      textProps.atlas.glyphs[i] = Object.assign(textProps.atlas.glyphs[i], mapProps)
+  for (let i = 0; i < labelProps.atlas.length; i++) {
+    for (let j = 0; j < labelProps.atlas[i].glyphs.length; j++) {
+      for (const mapProps of map._props()) {
+        labelProps.atlas[i].glyphs[j] = Object.assign(labelProps.atlas[i].glyphs[j], mapProps)
+      }
     }
   }
 
@@ -108,11 +181,21 @@ async function drawText () {
     for (const mapProps of map._props()) {
       draw.outlines({
         ...mapProps,
-        ...textProps.labelEngine,
+        ...labelProps.labelEngine,
         color: [0, 1, 0],
         zindex: 1000,
       })
-      draw.text(textProps.atlas.glyphs)
+      draw.areas({
+        ...mapProps,
+        ...props.areaP,
+      })
+      draw.linesFill({
+        ...mapProps,
+        ...props.lineP,  
+      })
+      for (let i = 0; i < labelProps.atlas.length; i++) {
+        draw.label[i](labelProps.atlas[i].glyphs)
+      }
     }
   }
 
@@ -122,190 +205,7 @@ async function drawText () {
     draw: drawWithMap,
   }
 }
-drawText()
-
-const drawGlyphs = {
-  attributes: {
-    position: [
-      -1, -1,
-      1, -1,
-      -1, 1,
-      1, 1]
-  },
-  count: 4,
-  primitive: 'triangle strip',
-  uniforms: {
-    // glyphsTexture, 
-    fillDist: 0.6,
-    haloDist: 0.2,
-    fillColor: [1, 1, 1, 1],
-    haloColor: [0, 0, 0, 1],
-    screenDim: (context) => [context.viewportWidth, context.viewportHeight],
-    aspect: (context) => context.viewportWidth/context.viewportHeight,
-    pixelRatio: () => window.devicePixelRatio,
-    zindex: 100,
-    fontSize: 18,
-    anchor: map.prop('anchor'),
-    glyphInLabelStringIndex: map.prop('glyphInLabelStringIndex'),
-    glyphInLabelStringOffset: map.prop('glyphInLabelStringOffset'),
-    labelDim: map.prop('labelDim'),
-    glyphTexOffset: map.prop('glyphTexOffset'),
-    glyphTexDim: map.prop('glyphTexDim'),
-    glyphRasterDim: map.prop('glyphRasterDim'),
-    glyphRasterHeight: map.prop('glyphRasterHeight'),
-    glyphRasterTop: map.prop('glyphRasterTop'),
-    letterSpacing: 0.8,
-    // labelTexDim: [texture.width, texture.height],
-  },
-  vert: `
-    precision highp float;
-    attribute vec2 position;
-    uniform float aspect, zindex, fontSize, pixelRatio;
-    uniform float glyphRasterTop;
-    uniform float letterSpacing;
-    uniform float glyphInLabelStringIndex;
-    uniform vec2 anchor;
-    uniform vec2 glyphRasterDim;
-    uniform vec2 screenDim;
-    uniform vec2 glyphInLabelStringOffset;
-    uniform vec2 labelDim;
-    uniform vec2 glyphTexOffset;
-    uniform vec2 glyphTexDim;
-    uniform vec2 labelTexDim;
-    uniform vec4 viewbox;
-    varying vec2 tcoord;
-    void main () {
-      vec2 uv = position * 0.5 + 0.5;
-
-      vec2 labelScaledFontSize = vec2(
-        fontSize * pixelRatio * labelDim.x / labelDim.y,
-        fontSize * pixelRatio
-      );
-      vec2 labelScaledScreen = labelScaledFontSize / screenDim * pixelRatio;
-      vec2 glyphScale = glyphRasterDim / labelDim * labelScaledScreen;
-      vec2 glyphOffset = vec2(
-        glyphInLabelStringOffset.x / labelDim.x * letterSpacing * labelScaledScreen.x,
-        (glyphRasterTop - glyphRasterDim.y) / labelDim.y * labelScaledScreen.y
-      );
-
-      vec2 p = uv * glyphScale + glyphOffset + anchor;
-      gl_Position = vec4(
-        (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-        ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
-        1.0/(1.0+zindex),
-        1
-      );
-      // this should be our position's within the texSize [[0, 1], [0, 1]]
-      // tcoord: (texOffset + (texDim * uv)) / texSize
-      vec2 flippedUv = vec2(uv.x, 1.0 - uv.y);
-      tcoord = (glyphTexOffset + (glyphTexDim * flippedUv)) / labelTexDim;
-    }
-  `,
-  frag: `
-    precision highp float;
-    uniform sampler2D glyphsTexture;
-    uniform float fillDist, haloDist;
-    uniform vec4 fillColor, haloColor;
-    varying vec2 tcoord;
-    void main () {
-      vec4 sample = texture2D(glyphsTexture, tcoord);
-      float fill = step(fillDist, sample.a);
-      float halo = step(fillDist, sample.a) + step(fillDist + haloDist, sample.a);
-      vec4 color = vec4(0.0);
-      if (halo == 1.0) {
-        color = haloColor;
-      }
-      else if (fill == 1.0) {
-        color = fillColor;
-      }
-      else {
-        discard;
-        return;
-      }
-      gl_FragColor = vec4(color.xyzw);
-    }
-  `,
-  blend: {
-    enable: true,
-    func: {
-      srcRGB: 'src alpha',
-      srcAlpha: 1,
-      dstRGB: 'one minus src alpha',
-      dstAlpha: 1
-    }
-  },
-}
-
-const drawNE = map.createDraw({
-  attributes: {
-    position: map.prop('positions'),
-  },
-  uniforms: {
-    aspect: (context) => context.viewportWidth/context.viewportHeight,
-    zindex: 10,
-  },
-  elements: map.prop('cells'),
-  vert: `
-    precision highp float;
-
-    attribute vec2 position;
-    
-    uniform vec4 viewbox;
-    uniform vec2 offset;
-    uniform float aspect, zindex;
-
-    void main () {
-      vec2 p = position.xy + offset;
-      gl_Position = vec4(
-        (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
-        ((p.y - viewbox.y) / (viewbox.w - viewbox.y) * 2.0 - 1.0) * aspect,
-        1.0/(1.0 + zindex), 1);
-    }
-  `,
-  frag: `
-    precision highp float;
-
-    void main () {
-      gl_FragColor = vec4(1,0,0,1);
-    }
-  `,
-  blend: {
-    enable: true,
-    func: {
-      srcRGB: 'src alpha',
-      srcAlpha: 1,
-      dstRGB: 'one minus src alpha',
-      dstAlpha: 1
-    }
-  },
-})
-
-resl({
-  manifest: {
-    neGeojson: {
-      type: 'text',
-      src: 'ne-10m-land-pr.json',
-      parser: JSON.parse,
-    },
-  },
-  onDone: ({ neGeojson }) => {
-    const neMesh = geojson2mesh(neGeojson)
-    // let prSN = [100, 0]
-    // neMesh.triangle.positions.forEach(([x, y]) => {
-    //   prSN[0] = Math.min(prSN[0], y)
-    //   prSN[1] = Math.max(prSN[1], y)
-    // })
-    // console.log('pr-south-north-extent')
-    // console.log(prSN)
-    // console.log('pr-vertical-midpoint')
-    // console.log((prSN[0] + prSN[1])/2)
-    drawNE.props.push({
-      positions: neMesh.triangle.positions,
-      cells: neMesh.triangle.cells,
-    })
-    map.draw()
-  },
-})
+drawLabels()
 
 const frame = () => {
   map.draw()
@@ -314,13 +214,13 @@ const frame = () => {
 frame()
 // map.regl.frame(frame)
 
-function asGeojson (cityJson) {
+function cityToOSM (cityJson) {
   const geojson = { type: 'FeatureCollection', features: [] }
   for (const city of cityJson) {
     const feature = {
       type: 'Feature',
       properties: {
-        place: 'city',
+        place: city.population > 35_000 ? 'city' : 'town',
         population: city.population,
         name: city.city,
       },
@@ -332,6 +232,55 @@ function asGeojson (cityJson) {
     geojson.features.push(feature)
   }
   return geojson
+}
+
+function cityToLineString (cityJson) {
+  const geojson = { type: 'FeatureCollection', features: [] }
+  for (let i = 0; i < cityJson.length - 1; i++) {
+    for (let j = 1; j < cityJson.length; j++) {
+      const ci = cityJson[i]
+      const cj = cityJson[j]
+      if (!(ci.city === 'San Juan' && cj.city === 'Guayama')) continue
+      const feature = {
+        type: 'Feature',
+        properties: {
+          name: `${ci.city} to ${cj.city}`,
+          highway: 'path',
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: [ci.coordinates, cj.coordinates],
+        }
+      }
+      geojson.features.push(feature)
+    }
+  }
+  return geojson
+}
+
+function neToOSM (neJson) {
+  const fc = { type: 'FeatureCollection', features: [] }
+  for (const feature of neJson.features) {
+    fc.features.push({
+      ...feature,
+      properties: {
+        ...feature.properties,
+        name: 'Puerto Rico',
+        place: 'island',
+      }  
+    })
+  }
+  return fc
+}
+
+function mergeFeatures (...geojsons) {
+  const fc = { type: 'FeatureCollection', features: [] }
+  for (const geojson of geojsons) {
+    for (const feature of geojson.features) {
+      fc.features.push(feature)
+    }
+  }
+  return fc
 }
 
 function mergeDecoded(mdecoded) {
@@ -356,14 +305,11 @@ function mergeDecoded(mdecoded) {
       types: new Float32Array(lineSize),
       positions: new Float32Array(lineSize*2),
       normals: new Float32Array(lineSize*2),
-      radiatingCoastlineBufferIndex: new Float32Array(lineSize),
-      radiatingCoastlineBufferDistance: new Float32Array(lineSize),
       labels: {},
     },
     area: {
       ids: Array(areaSize).fill(0),
       types: new Float32Array(areaSize),
-      elevation: new Float32Array(areaSize),
       positions: new Float32Array(areaSize*2),
       cells: new Uint32Array(areaCellSize),
       labels: {},
@@ -394,14 +340,6 @@ function mergeDecoded(mdecoded) {
       decoded.line.positions[lineOffset*2+1] = d.line.positions[k*2+1]
       decoded.line.normals[lineOffset*2+0] = d.line.normals[k*2+0]
       decoded.line.normals[lineOffset*2+1] = d.line.normals[k*2+1]
-      if (includeAllTags) {
-        if (typeof d.line.radiatingCoastlineBufferIndex[k] === 'number') {
-          decoded.line.radiatingCoastlineBufferIndex[lineOffset] = d.line.radiatingCoastlineBufferIndex[k]
-        }
-        if (typeof d.line.radiatingCoastlineBufferDistance[k] === 'number') {
-          decoded.line.radiatingCoastlineBufferDistance[lineOffset] = d.line.radiatingCoastlineBufferDistance[k]
-        }
-      }
       lineOffset++
     }
     Object.assign(decoded.line.labels, d.line.labels)
@@ -413,9 +351,6 @@ function mergeDecoded(mdecoded) {
       decoded.area.types[areaOffset] = d.area.types[k]
       decoded.area.positions[areaOffset*2+0] = d.area.positions[k*2+0]
       decoded.area.positions[areaOffset*2+1] = d.area.positions[k*2+1]
-      if (d.area.elevation[k]) {
-        decoded.area.elevation[areaOffset] = d.area.elevation[k]
-      }
       areaOffset++
     }
     Object.assign(decoded.area.labels, d.area.labels)
@@ -431,4 +366,11 @@ function mergeDecoded(mdecoded) {
     Object.assign(decoded.areaBorder.labels, d.areaBorder.labels)
   }
   return decoded
+}
+
+function mapUniforms (props) {
+  props.uniforms.viewbox = map.prop('viewbox')
+  props.uniforms.offset = map.prop('offset')
+  props.uniforms.aspect = (context) => context.viewportWidth/context.viewportHeight
+  props.uniforms.zoom = map.prop('zoom')
 }

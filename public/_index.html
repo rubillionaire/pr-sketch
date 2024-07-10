@@ -6,6 +6,9 @@
   <title>pr-sketch</title>
 </head>
 <body>
-  <script src="bundle.js"></script>
+  <script>
+    new EventSource('/esbuild').addEventListener('change', () => location.reload())
+  </script>
+  <script type="module" src="bundle.js"></script>
 </body>
 </html>

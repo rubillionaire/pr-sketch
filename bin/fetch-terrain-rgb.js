@@ -5,6 +5,7 @@ const path = require('path')
 
 const directory = process.argv[2]
 const zoomOrTileSet = process.argv[3] ? getZoomOrTileSet(process.argv[3]) : 8
+const resolution = '@2x'
 
 ;(async () => {
   const mapboxKey = (await fsp.readFile('mapbox.key')).toString().trim()
@@ -25,7 +26,7 @@ const zoomOrTileSet = process.argv[3] ? getZoomOrTileSet(process.argv[3]) : 8
   const tileProcessors = tileSet.map((tile) => {
     return new Promise(async (resolve, reject) => {
       const elevationResponse = await fetchTile({ tile, mapboxKey })
-      await fsp.writeFile(path.join(directory, `${tileFolderOrder(tile).join('-')}.pngraw`), elevationResponse.body)
+      await fsp.writeFile(path.join(directory, `${tileFolderOrder(tile).join('-')}${resolution}.pngraw`), elevationResponse.body)
     }) 
   })
 
@@ -40,7 +41,7 @@ const zoomOrTileSet = process.argv[3] ? getZoomOrTileSet(process.argv[3]) : 8
 function fetchTile ({ tile, mapboxKey }) {
   console.log(tile)
   const domain = 'https://api.mapbox.com/v4/'
-  const source = `mapbox.terrain-rgb/${tileFolderOrder(tile).join('/')}.pngraw`;
+  const source = `mapbox.terrain-rgb/${tileFolderOrder(tile).join('/')}${resolution}.pngraw`;
   const url = `${domain}${source}?access_token=${mapboxKey}`;
   return fetch(url)
 }

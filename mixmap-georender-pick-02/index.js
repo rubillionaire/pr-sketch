@@ -1,13 +1,21 @@
 // mixmap-georender-pick
 // - 00
 // - draw pr island and enable picking
+// - 01
+// - works on ios
+// - use a uint8 pickfb and pack the .xyz components with the index value
+// - up to 256^3 values can be captured in this range
+// - 02
+// - now linked `int-pack-vec3` to pave the way for `mixmap-georender` usage
 const regl = require('regl')
+const glsl = require('glslify')
 const mixmap = require('@rubenrodriguez/mixmap')
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
 const { default: shaders } = require('@rubenrodriguez/mixmap-georender')
 const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
 const decode = require('@rubenrodriguez/georender-pack/decode')
 const makeStylesheet = require('../util/make-texture.js')
+const { unpackVec3 } = require('int-pack-vec')
 
 const prGeoJson = require('../public/ne-50m-land-pr.json')
 // we need an id to pick from in the end
@@ -17,14 +25,9 @@ prGeoJson.features = prGeoJson.features.map((f, i) => {
   return f
 })
 
-// allow for float's in textures, since we are writing to a frame buffer object
-// which is essnetially a texture, and we want to write out vec4's to it
-// TODO does the texture float work on iOS, so that we can pick on mobile?
-// - if not, we might want to find a way to do thats
 const mix = mixmap(regl, {
   extensions: [
     'oes_element_index_uint',
-    'oes_texture_float',
   ]
 })
 
@@ -38,10 +41,24 @@ let startViewbox = [prWE[0],prSN[0],prWE[1],prSN[1]]
 const map = mix.create({
   viewbox: startViewbox,
   pickfb: {
-    colorType: 'float',
+    type: 'uint8',
+    colorType: 'uint8',
     colorFormat: 'rgba',
+    depth: true,
   },
 })
+
+const pickFrag = glsl`
+  precision highp float;
+  varying float vindex;
+
+  #pragma glslify: pack = require('int-pack-vec/index.glsl');
+
+  void main () {
+    vec3 encoded = pack(vindex, vec3(0.));
+    gl_FragColor = vec4(encoded, 1.0);
+  }
+`
 
 window.addEventListener('resize', () => {
   map.resize(window.innerWidth, window.innerHeight)
@@ -54,11 +71,10 @@ document.body.appendChild(map.render({
 }))
 
 window.addEventListener('click', (event) => {
-  console.log(event)
   map.pick(event, (err, picked) => {
     if (err) return console.log(err)
     console.log({picked})
-    const [index, featureType] = picked
+    const index = unpackVec3(picked.slice(0, 3))
     for (const props of draw.areas.props) {
       const id = props.indexToId[index]
       if (Number.isInteger(id)) {
@@ -69,27 +85,7 @@ window.addEventListener('click', (event) => {
 })
 
 const { areas } = shaders(map)
-areas.pickFrag = `
-  precision highp float;
-  uniform vec2 size;
-  varying float vft, vindex;
-  varying vec2 vpos;
-  varying vec4 vcolor;
-  uniform float featureCount;
-  void main () {
-    float n = mod((vpos.x*0.5+0.5)*size.x, 2.0);
-    vec4 pix1 = vec4(
-      floor(vindex/(256.0*256.0)),
-      mod(vindex/256.0, 256.0),
-      mod(vindex, 256.0),
-      255.0) / 255.0;
-    float opacity = floor(min(vcolor.w, 1.0));
-    //vec4 pix2 = vec4((0.0+opacity)/255.0, 0.0, 0.0, 1.0);
-    // vec4 pix2 = vec4(10.0/255.0, 0.0, 0.0, 1.0);
-    // gl_FragColor = mix(pix1, pix2, step(1.0, n));
-    gl_FragColor = vec4(vindex, vft, opacity, 1.0);
-  }
-`
+areas.pickFrag = pickFrag
 
 const draw = {
   areas: map.createDraw(areas),

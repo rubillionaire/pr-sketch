@@ -1,6 +1,10 @@
 // mixmap-georender-pick
 // - 00
 // - draw pr island and enable picking
+// - 01
+// - works on ios
+// - use a uint8 pickfb and pack the .xyz components with the index value
+// - up to 256^3 values can be captured in this range
 const regl = require('regl')
 const mixmap = require('@rubenrodriguez/mixmap')
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
@@ -38,44 +42,53 @@ let startViewbox = [prWE[0],prSN[0],prWE[1],prSN[1]]
 const map = mix.create({
   viewbox: startViewbox,
   pickfb: {
-    colorType: 'float',
+    type: 'uint8',
+    colorType: 'uint8',
     colorFormat: 'rgba',
+    depth: true,
   },
 })
+function encodeVec4 (value) {
+  let v = value + 0
+  const vec4 = [0, 0, 0, 0]
+  vec4[3] = v % 256
+  v = Math.floor(v/256)
+  vec4[2] = v % 256
+  v = Math.floor(v/256)
+  vec4[1] = v % 256
+  v = Math.floor(v/256)
+  vec4[0] = v % 256
+  return vec4.map(n => n/255)
+}
 
-window.addEventListener('resize', () => {
-  map.resize(window.innerWidth, window.innerHeight)
-})
-document.body.style.margin = '0'
-document.body.appendChild(mix.render())
-document.body.appendChild(map.render({
-  width: window.innerWidth,
-  height: window.innerHeight,
-}))
-
-window.addEventListener('click', (event) => {
-  console.log(event)
-  map.pick(event, (err, picked) => {
-    if (err) return console.log(err)
-    console.log({picked})
-    const [index, featureType] = picked
-    for (const props of draw.areas.props) {
-      const id = props.indexToId[index]
-      if (Number.isInteger(id)) {
-        console.log({id})
-      }
-    }
-  })
-})
-
-const { areas } = shaders(map)
-areas.pickFrag = `
+const pickFrag = `
   precision highp float;
+
   uniform vec2 size;
   varying float vft, vindex;
   varying vec2 vpos;
   varying vec4 vcolor;
   uniform float featureCount;
+
+  const highp vec4 bitSh = vec4(256. * 256. * 256., 256. * 256., 256., 1.);
+  const highp vec4 bitMsk = vec4(0.,vec3(1./256.0));
+  highp vec4 pack(highp float value) {
+    highp vec4 comp = fract(value * bitSh);
+    comp -= comp.xxyz * bitMsk;
+    return comp;
+  }
+
+  vec4 encode (float value) {
+    float v = value + 0.0;
+    vec4 r = vec4(0., 0., 0., 255.0);
+    r.z = mod(v, 256.0);
+    v = floor(v / 256.0);
+    r.y = mod(v, 256.0);
+    v = floor(v / 256.0);
+    r.x = mod(v, 256.0);
+    return r/255.0;
+  }
+
   void main () {
     float n = mod((vpos.x*0.5+0.5)*size.x, 2.0);
     vec4 pix1 = vec4(
@@ -87,9 +100,48 @@ areas.pickFrag = `
     //vec4 pix2 = vec4((0.0+opacity)/255.0, 0.0, 0.0, 1.0);
     // vec4 pix2 = vec4(10.0/255.0, 0.0, 0.0, 1.0);
     // gl_FragColor = mix(pix1, pix2, step(1.0, n));
-    gl_FragColor = vec4(vindex, vft, opacity, 1.0);
+    // gl_FragColor = vec4(vindex, vft, opacity, 1.0);
+    // gl_FragColor = pack(vindex);
+    // gl_FragColor = pix1;
+    // gl_FragColor = vec4(vindex);
+    gl_FragColor = encode(vindex);
+    // gl_FragColor = vec4(0.5);
   }
 `
+
+window.addEventListener('resize', () => {
+  map.resize(window.innerWidth, window.innerHeight)
+})
+document.body.style.margin = '0'
+document.body.appendChild(mix.render())
+document.body.appendChild(map.render({
+  width: window.innerWidth,
+  height: window.innerHeight,
+}))
+
+function decodeVec3 (vec3) {
+  return (vec3[0] * 256 * 256) + (vec3[1] * 256) + vec3[2]
+}
+function decodeVec4 (vec4) {
+  return (d[0] * 256 * 256 * 256) + (d[1] * 256 * 256) + (d[2] * 256) + d[3]
+}
+
+window.addEventListener('click', (event) => {
+  map.pick(event, (err, picked) => {
+    if (err) return console.log(err)
+    console.log({picked})
+    const index = decodeVec3(picked.slice(0, 3))
+    for (const props of draw.areas.props) {
+      const id = props.indexToId[index]
+      if (Number.isInteger(id)) {
+        console.log({id})
+      }
+    }
+  })
+})
+
+const { areas } = shaders(map)
+areas.pickFrag = pickFrag
 
 const draw = {
   areas: map.createDraw(areas),

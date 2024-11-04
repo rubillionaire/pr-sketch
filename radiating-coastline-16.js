@@ -1,3 +1,4 @@
+// build note, uses `glsl-georender-style-texture`  @ 4.0.2
 // radiating-coastline-16
 // - fork of buffered-coast-lines-03
 // - 00
@@ -213,11 +214,12 @@ document.body.appendChild(map.render({
 const stylesheetString = `
 @media print {
   body {
-    background: red;  
+    width: 100%;
+    height: 100%;
   }
   cavnas {
-    width: 10000pt;
-    height: 10000pt;
+    width: 100%;
+    height: 100%;
   }
 }
 `

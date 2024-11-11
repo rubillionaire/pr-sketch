@@ -5,11 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "browserify index.js -o public/bundle.js -t glslify",
+    "build": "browserify index.js -o public/bundle.js",
     "dev:serve": "serve public",
-    "dev:watch": "watchify index.js -o public/bundle.js -t glslify -v",
+    "dev:watch": "watchify index.js -o public/bundle.js -v",
     "dev": "run-p dev:*",
-    "start": "budo index.js --dir public/ --live -- -t glslify"
+    "start": "budo index.js --dir public/ --live"
   },
   "author": "",
   "license": "ISC",
@@ -61,11 +61,21 @@
     "webworkify": "^1.5.0"
   },
   "devDependencies": {
+    "brfs": "^1.6.1",
     "budo": "^11.7.0",
+    "choo": "^7.1.0",
     "esbuild-plugin-path-alias": "^1.0.7",
     "node-stdlib-browser": "^1.2.0",
     "npm-run-all": "^4.1.5",
     "serve": "^14.2.1",
+    "sheetify": "^7.4.0",
     "watchify": "^4.0.0"
+  },
+  "browserify": {
+    "transform": [
+      "glslify",
+      "sheetify",
+      "brfs"
+    ]
   }
 }

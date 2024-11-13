@@ -5,7 +5,9 @@
 // - intial choo setup for the scroll
 // - 01 adds tryptich using MapFillParent component for display that responds to css parent changes
 // - 02
-// - 
+// - refactor the maps to be created based on name, so we can more easily
+//    manage dealing with all maps as a group, and then individually as
+//    necessary
 
 var app = require('choo')()
 var html = require('choo/html')

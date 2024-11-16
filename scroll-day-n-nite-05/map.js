@@ -558,7 +558,6 @@ async function createProps ({ map, includeIsland=false }) {
 
 function createDraws ({ map, radiatingCoastlineOpts={} }) {
   const globalContext = {
-    tick: 0,
     lightPosition: lightPositionTick({ tick: 0 }),
     lightAmbientAmount: 0.2,
     lightTransitionBuffer: 0.25,
@@ -775,10 +774,7 @@ function createDraws ({ map, radiatingCoastlineOpts={} }) {
       dimensions: map.prop('dimensions'),
       maxPopulation: map.prop('maxPopulation'),
       colorLights: colors.glslLight,
-      tick: ({ tick }) => {
-        globalContext.tick = tick
-        return tick
-      },
+      tick: ({ tick }) => tick,
       lightPosition: () => globalContext.lightPosition,
       lightTransitionBuffer: globalContext.lightTransitionBuffer,
     },
@@ -845,7 +841,7 @@ function createDraws ({ map, radiatingCoastlineOpts={} }) {
         float popFlux = sin((tick * 0.1 + r * 1000.0)/10.0) * popFluxFactor;
 
         float highlightDuration = 280.0;
-        float highlightProgress = min((tick - vhighlight.x)/highlightDuration, 1.0);
+        float highlightProgress = clamp((tick - vhighlight.x)/highlightDuration, 0.0, 1.0);
         // vhighlight.y = 0 when shrinking to 0
         // vhighlight.y = 1 when growing to 1
         float highlightFactor = mix(1.0 - highlightProgress, highlightProgress, vhighlight.y);

@@ -1,6 +1,6 @@
 [
   {"city": "San Juan", "population": 418140, "coordinates": [-66.105735, 18.465539]},
-  {"city": "Bayamon", "population": 203499, "coordinates": [-66.163822, 18.398561]},
+  {"city": "Bayamón", "population": 203499, "coordinates": [-66.163822, 18.398561]},
   {"city": "Carolina", "population": 170404, "coordinates": [-65.967385, 18.380783]},
   {"city": "Ponce", "population": 152634, "coordinates": [-66.614062, 18.011077]},
   {"city": "Caguas", "population": 86804, "coordinates": [-66.037063, 18.234120]},
@@ -11,12 +11,12 @@
   {"city": "Fajardo", "population": 34068, "coordinates": [-65.650529, 18.325787]},
   {"city": "Levittown", "population": 29785, "coordinates": [-66.170850, 18.449732]},
   {"city": "Vega Baja", "population": 29325, "coordinates": [-66.392319, 18.444840]},
-  {"city": "Catano", "population": 28093, "coordinates": [-66.130671, 18.441263]},
+  {"city": "Cataño", "population": 28093, "coordinates": [-66.130671, 18.441263]},
   {"city": "Barceloneta", "population": 22322, "coordinates": [-66.537506, 18.455124]},
   {"city": "Guayama", "population": 21575, "coordinates": [-66.111832, 17.984111]},
   {"city": "Humacao", "population": 20387, "coordinates": [-65.823509, 18.148750]},
   {"city": "Yauco", "population": 20295, "coordinates": [-66.849898, 18.033275]},
   {"city": "Cayey", "population": 18494, "coordinates": [-66.161564, 18.111405]},
   {"city": "Candelaria", "population": 17631, "coordinates": [-66.165322, 18.404529]},
-  {"city": "Manati", "population": 16092, "coordinates": [-66.482922, 18.429664]}
+  {"city": "Manatí", "population": 16092, "coordinates": [-66.482922, 18.429664]}
 ]

@@ -48,7 +48,7 @@
     "glsl-schlick-curve": "^1.0.0",
     "glslify": "^7.1.1",
     "hsluv": "^1.0.1",
-    "mixmap": "^1.6.0",
+    "@rubenrodriguez/mixmap": "^1.7.0",
     "mixmap-georender": "^5.0.0",
     "node-fetch": "^2.6.7",
     "perlin-noise-3d": "^0.5.4",

@@ -263,7 +263,7 @@ function mapScroll2 (state, emit) {
           <div
             class="aspect-1 overflow-hidden"
             style="--order: ${rowTriptychOrder[0].order}"
-          >
+            >
             ${state.cache(MapFillParent, 'cerroDePuntaEarlyMorning').render({
                 map: getMap('cerroDePuntaEarlyMorning'),
                 props: {
@@ -279,7 +279,7 @@ function mapScroll2 (state, emit) {
           <div
             class="aspect-1 overflow-hidden"
             style="--order: ${rowTriptychOrder[1].order}"
-          >
+            >
             ${state.cache(MapFillParent, 'cerroDePuntaNoon').render({
                 map: getMap('cerroDePuntaNoon'),
                 props: {
@@ -295,7 +295,7 @@ function mapScroll2 (state, emit) {
           <div
             class="aspect-1 overflow-hidden"
             style="--order: ${rowTriptychOrder[2].order}"
-          >
+            >
             ${state.cache(MapFillParent, 'cerroDePuntaLateAfternoon').render({
                 map: getMap('cerroDePuntaLateAfternoon'),
                 props: {
@@ -311,7 +311,7 @@ function mapScroll2 (state, emit) {
           <div
             class="aspect-1 overflow-hidden"
             style="--order: ${rowTriptychOrder[3].order}"
-          >
+            >
             ${state.cache(MapFillParent, 'nightFajardo').render({
                 map: getMap('nightFajardo'),
                 props: {
@@ -327,7 +327,7 @@ function mapScroll2 (state, emit) {
           <div
             class="aspect-1 overflow-hidden"
             style="--order: ${rowTriptychOrder[4].order}"
-          >
+            >
             ${state.cache(MapFillParent, 'nightSanJuan').render({
                 map: getMap('nightSanJuan'),
                 props: {
@@ -343,7 +343,7 @@ function mapScroll2 (state, emit) {
           <div
             class="aspect-1 overflow-hidden"
             style="--order: ${rowTriptychOrder[5].order}"
-          >
+            >
             ${state.cache(MapFillParent, 'nightManatí').render({
                 map: getMap('nightManatí'),
                 props: {

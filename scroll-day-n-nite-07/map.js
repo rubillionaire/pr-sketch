@@ -283,12 +283,12 @@ async function createProps ({ map, includeIsland=false }) {
   
   // decoded-georender : start
   // radiating-coastline : start
-  const bufferCount = 14
+  const bufferCount = 10
   let decodedGeorender = []
 
   const units = 'kilometers'
-  const bufferIncrement = 1.2 // kilometers
-  const bufferDistances = new Array(bufferCount).fill(0).map((_, i) => Math.pow(i*bufferIncrement, 1.21))
+  const bufferIncrement = 1.4 // kilometers
+  const bufferDistances = new Array(bufferCount).fill(0).map((_, i) => Math.pow(i*bufferIncrement, 1.3))
   bufferDistances.forEach((bufferDistance, index) => {
     if (index === 0) return
     const buffered = buffer(neGeojson, bufferDistance, { units })
@@ -337,7 +337,7 @@ async function createProps ({ map, includeIsland=false }) {
   const zValuesCoast = []
   const coastlineShadowDecoded = neGeojson.features.map((land) => {
     const bothSides = []
-    const waterSideBuffer = buffer(land, bufferIncrement, { units })
+    const waterSideBuffer = buffer(land, bufferIncrement * 0.3, { units })
     const waterSide = difference(waterSideBuffer, land)
     bothSides.push(waterSide)
     const landSideBuffer = buffer(land, -bufferIncrement, { units })
@@ -1205,7 +1205,6 @@ function createDraws ({
 
   const drawCmds = {
     ocean: map.createDraw(oceanShader),
-    area: map.createDraw(geoRenderShaders.areas),
     coastlineShadow: map.createDraw(coastlineShadowShader),
     terrainImgTile: map.createDraw(terrainImgTileShader),
     radiatingCoastline: map.createDraw(includeAllTags ? geoRenderShadersTick.lineFill : geoRenderShaders.lineFill),
@@ -1228,22 +1227,7 @@ function spreadProps ({ map, draw, props }) {
   setProps(draw.coastlineShadow.props, props.area)
   setProps(draw.city.props, props.city)
 
-  setProps(
-    draw.radiatingCoastline.props,
-    Object.assign({}, map._props()[0])
-  )
-  setProps(
-    draw.coastlineShadow.props,
-    Object.assign({}, map._props()[0])
-  )
-  setProps(
-    draw.ocean.props,
-    Object.assign({}, map._props()[0])
-  )
-  setProps(
-    draw.city.props,
-    Object.assign({}, map._props()[0])
-  )
+  draw.ocean.props = [{}]
 }
 
 function setProps(dst, src) {

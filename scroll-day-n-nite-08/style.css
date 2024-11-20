@@ -241,6 +241,52 @@ section#map-fading-in {
   height: 100%;
 }
 
+.overlapping-corners {
+  --column-overlap: 10%;
+  --row-overlap: calc(var(--column-overlap) * 2.0);
+  --border-width: 1vw;
+  width: 100vw;
+  aspect-ratio: 1;
+  display: grid;
+  grid-template-columns: 1fr var(--column-overlap) 1fr;
+  grid-template-rows: 1fr var(--row-overlap) 1fr;
+}
+.overlapping-corners > * {
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.overlapping-corners .top-left {
+  /* row start / column start / row end / column end */
+  grid-area: 1 / 1 / 2 / 2;
+  z-index: 1;
+}
+
+.overlapping-corners .top-right {
+  /* row start / column start / row end / column end */
+  grid-area: 1 / 2 / 3 / 4;
+  z-index: 3;
+
+  border-left: var(--border-width) solid var(--color-light);
+  border-bottom: var(--border-width) solid var(--color-light);
+}
+
+.overlapping-corners .bottom-left {
+  /* row start / column start / row end / column end */
+  grid-area: 2 / 1 / 4 / 3;
+  z-index: 2;
+
+  border-right: var(--border-width) solid var(--color-light);
+  border-top: var(--border-width) solid var(--color-light);
+}
+
+.overlapping-corners .bottom-right {
+  /* row start / column start / row end / column end */
+  grid-area: 2 / 3 / 4 / 4;
+  z-index: 1;
+}
+
 .row-triptych-grid {
   --column-repeat: 2;
   display: grid;

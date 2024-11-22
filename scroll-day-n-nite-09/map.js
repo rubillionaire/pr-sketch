@@ -620,6 +620,7 @@ function createDraws ({
         colorForeground: colors.glslDark,
         colorBackground: colors.glslLight,
         displayThreshold: radiatingCoastlineDisplayThreshold,
+        lightTransitionBuffer: globalContext.lightTransitionBuffer,
       }),
       attributes: Object.assign({}, geoRenderShaders.lineFill.attributes, {
         radiatingCoastlineBufferIndex: map.prop('radiatingCoastlineBufferIndex'),
@@ -650,7 +651,7 @@ function createDraws ({
           vindex = index;
           zindex = line.zindex + 0.1;
           vec2 p = position.xy + offset;
-          vnorm = normalize(normal)*(line.fillWidth/size);
+          vnorm = normalize(normal)*((line.fillWidth)/size);
           vdist = dist;
           gl_Position = vec4(
             (p.x - viewbox.x) / (viewbox.z - viewbox.x) * 2.0 - 1.0,
@@ -704,10 +705,13 @@ function createDraws ({
               )/18.0
             ) * 0.5 + 0.5);
 
+          float randomThreshold = sqrt(random(vec2(random(vPosLonLat.xy), vPosLonLat.yx)));
+          float speckleHidden = step(randomThreshold, 0.65);
+
           float hasLight = step(0.0, dotSphereLight);
           vec3 colorHsluv = mix(colorBackground.xyz, colorForeground.xyz, hasLight);
-          vec3 color = colorHsluv.xyz;
-          float opacity = mix(0.0, vcolor.w * x * tt, vDisplay);
+          vec3 color = colorHsluv.xyz; 
+          float opacity = mix(0.0, vcolor.w * x * tt, vDisplay * speckleHidden);
           gl_FragColor = vec4(color.xyz, opacity);
           //gl_FragColor = vec4(mix(vec3(0,1,0), vec3(1,0,0), x), 1.0);
         }
@@ -782,18 +786,18 @@ function createDraws ({
         // 0 means color is fully on
         // 1 means color is fully off
         // we have a primary color, which we want to be fully on
-        float hiddenThreshold = smoothstep(-lightTransitionBuffer, lightTransitionBuffer, dotSphereLight);
+        float hiddenOffsetDir = step(0.0, dotSphereLight);
+        float hiddenOffset = mix(0.05, 0.0, hiddenOffsetDir);
+        float hiddenThreshold = smoothstep(-lightTransitionBuffer, lightTransitionBuffer, dotSphereLight) + hiddenOffset;
+        float randomThreshold = sqrt(random(vec2(random(vPosLonLat.xy), vPosLonLat.yx)));
 
-        vec3 color = colorForeground.xyz;
-        if (dotSphereLight > lightTransitionBuffer) {
-          color = colorBackground.xyz;
-        }
-        else {
-          float randomThreshold = sqrt(random(vec2(random(vPosLonLat.xy), vPosLonLat.yx)));  
-            if (randomThreshold < hiddenThreshold) {
-            color = colorBackground.xyz;
-          }
-        }
+        float colorFlipper = clamp(
+          step(lightTransitionBuffer, dotSphereLight) +
+          step(randomThreshold, hiddenThreshold),
+          0.0, 1.0
+        );
+
+        vec3 color = mix(colorForeground.xyz, colorBackground.xyz, colorFlipper);
         gl_FragColor = vec4(color.xyz, 1.0);
       }
     `,

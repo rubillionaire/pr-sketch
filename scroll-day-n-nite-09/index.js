@@ -461,13 +461,13 @@ function mapScroll2 (state, emit) {
       <section class="box-border bg-light full-width p-8">
         <div class="stack items-center">
           <div class="max-width-text">
-            <p>This is a tiny love letter to some aspects of Puerto Rico.
-            The map has two primary phases and a full transition between each.</p>
+            <p>This is a tiny love letter to Puerto Rico with its beautiful mountains,
+            and lively cities. The map has two primary phases that highlight these 
+            facets and a transition between them.</p>
             <p>
               All graphics are based on a cartographic scheme
-              that is either showing color, or the absence of that color. This is
-              used to comminicate two sets of information with constrasting
-              display.
+              that is either showing color, or the absence of that color. As if they
+              were drawn on a piece of paper with only one pen color.
             </p>
           </div>
         </div>
@@ -563,7 +563,7 @@ function mapScroll2 (state, emit) {
                 href="https://en.wikipedia.org/wiki/Cerro_de_Punta"
                 target="_blank"
               >Cerro de Punta</a>, which peaks at 1,338 meters above sea level.
-              It is said that this is the home of the best view of Puerto Rico.
+              It is said the best view of Puerto Rico.
             </p>
           </div>
         </div>
@@ -686,7 +686,7 @@ function mapScroll2 (state, emit) {
             </div>
           </div>
           <div class="city-highlight-grid">
-            <div class="x-left">
+            <div class="x-ponce">
               <figure class="full-width full-height overflow-hidden">
                 ${state.cache(MapFillParent, 'nightPonce').render({
                     map: getMap('nightPonce'),
@@ -707,7 +707,7 @@ function mapScroll2 (state, emit) {
                 >Ponce Metropolitan Area</a>.
               </caption>
             </div>
-            <div class="x-right">
+            <div class="x-cluster">
               <figure class="full-width full-height overflow-hidden">
                 ${state.cache(MapFillParent, 'nightManatíCluster').render({
                     map: getMap('nightManatíCluster'),
@@ -726,7 +726,7 @@ function mapScroll2 (state, emit) {
                 island along the northern coast.
               </caption>
             </div>
-            <div class="x-center">
+            <div class="x-cayey">
               <figure class="full-width full-height overflow-hidden">
                 ${state.cache(MapFillParent, 'nightCayey').render({
                     map: getMap('nightCayey'),

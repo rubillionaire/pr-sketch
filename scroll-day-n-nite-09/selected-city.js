@@ -44,6 +44,6 @@ module.exports = class SelectedCity extends Component {
     if (cities) {
       this.local.cities = cities
     }
-    return html`<p>${this.format({ selectedCity })}</p>`
+    return html`<p class="mt-2">${this.format({ selectedCity })}</p>`
   }
 }

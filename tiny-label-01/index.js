@@ -65,12 +65,16 @@ document.body.appendChild(map.render({
 }))
 
 async function drawLabels () {
+  const font = new FontFace('Fredoka', "url('fonts/Fredoka-SemiBold.ttf')")
+  await font.load()
+  document.fonts.add(font)
+
   const stylesheet = {
     'place.island': {
       'area-fill-color': '#ee0066',
-      'area-label-fill-color': '#000000',
-      // 'area-label-font': 'Helvetica',
-      'area-label-font-size': 19,
+      'area-label-fill-color': '#ee0066',
+      'area-label-font': 'Fredoka',
+      'area-label-font-size': 20,
       'area-label-stroke-width': 3,
       'area-zindex': 8,
       'area-opacity': 99,
@@ -78,7 +82,6 @@ async function drawLabels () {
     'place.city': {
       'point-label-font': 'Helvetica',
       'point-label-fill-color': '#000000',
-      'point-label-fill-opacity': 100,
       'point-label-font-size': 16,
       'point-label-stroke-width': 3,
       'point-size': 10,
@@ -86,7 +89,6 @@ async function drawLabels () {
     'place.town': {
       'point-label-font': 'Helvetica',
       'point-label-fill-color': '#000000',
-      'point-label-fill-opacity': 100,
       'point-label-font-size': 12,
       'point-label-stroke-width': 3,
       'point-size': 8,
@@ -151,6 +153,7 @@ async function drawLabels () {
   })
   const props = geodata.update(map.zoom)
   console.log({props})
+  console.log({style})
   const labelProps = label.update(props, map, { style })
   console.log({labelProps})
 

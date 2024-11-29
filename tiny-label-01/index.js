@@ -5,8 +5,8 @@
 // - 01
 // - explore what label placement engine output from
 //   `tiny-label` looks like
-// - `tiny-label` @ git hash `04871dc`
-// - `georender-style2png` @ git hash `1a676fa`
+// - `tiny-label` @ git hash `563f9b2`
+// - `georender-style2png` @ git hash `fda2e22`
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -82,14 +82,14 @@ async function drawLabels () {
     'place.city': {
       'point-label-font': 'Helvetica',
       'point-label-fill-color': '#000000',
-      'point-label-font-size': 16,
+      'point-label-font-size': 18,
       'point-label-stroke-width': 3,
       'point-size': 10,
     },
     'place.town': {
       'point-label-font': 'Helvetica',
       'point-label-fill-color': '#000000',
-      'point-label-font-size': 12,
+      'point-label-font-size': 16,
       'point-label-stroke-width': 3,
       'point-size': 8,
     },
@@ -172,12 +172,33 @@ async function drawLabels () {
     linesFill: map.regl(lineFillShader),
   }
 
+  const atlasProps = []
   for (let i = 0; i < labelProps.atlas.length; i++) {
+    const glyphProps = []
     for (let j = 0; j < labelProps.atlas[i].glyphs.length; j++) {
       for (const mapProps of map._props()) {
-        labelProps.atlas[i].glyphs[j] = Object.assign(labelProps.atlas[i].glyphs[j], mapProps)
+        const glyph = labelProps.atlas[i].glyphs[j]
+        const { fontSize, strokeWidth } = glyph
+        const gamma = 2.0 * 1.4142 / fontSize
+        const strokeProps = {
+          ...mapProps,
+          ...glyph,
+          buffer: 0.75 - (strokeWidth/fontSize),
+          gamma,
+          color: glyph.strokeColor,
+        }
+        const fillProps = {
+          ...mapProps,
+          ...glyph,
+          buffer: 0.75,
+          gamma,
+          color: glyph.fillColor,
+        }
+        glyphProps.push(strokeProps)
+        glyphProps.push(fillProps)
       }
     }
+    atlasProps.push(glyphProps)
   }
 
   const drawWithMap = () => {
@@ -196,8 +217,8 @@ async function drawLabels () {
         ...mapProps,
         ...props.lineP,  
       })
-      for (let i = 0; i < labelProps.atlas.length; i++) {
-        draw.label[i](labelProps.atlas[i].glyphs)
+      for (let i = 0; i < atlasProps.length; i++) {
+        draw.label[i](atlasProps[i])
       }
     }
   }

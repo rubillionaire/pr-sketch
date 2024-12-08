@@ -145,7 +145,8 @@ function addElevation ({ zindex }) {
     `,
   }
   new MixmapPMTiles(map, {
-    source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/terrain-dem-v1-clipped-pr.pmtiles',
+    // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/terrain-dem-v1-clipped-pr.pmtiles',
+    source: 'http://localhost:9966/pmtiles/terrain-dem-v1-clipped-pr.pmtiles',
     tileType: TileType.Png,
     shaders: {
       elevation,
@@ -247,7 +248,8 @@ function addShoreBuffer ({ zindex }) {
     },
   }
   new MixmapPMTiles(map, {
-    source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-shore-buffered.pmtiles',
+    // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-shore-buffered.pmtiles',
+    source: 'http://localhost:9966/pmtiles/pr-shore-buffered.pmtiles',
     tileType: TileType.Png,
     shaders: {
       taper,
@@ -260,7 +262,8 @@ function addMvt ({ includePnts=true }={}) {
   var style = new Image
   style.onload = function () {
     new MixmapPMTiles(map, {
-      source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
+      // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
+      source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
       tileType: TileType.Mvt,
       style,  
       filterFeature,

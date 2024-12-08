@@ -7,17 +7,19 @@
 //   `tiny-label` looks like
 // - `tiny-label` @ git hash `563f9b2`
 // - `georender-style2png` @ git hash `fda2e22`
+// - 02
+// - mixmap-georender text integration
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
 const geojson2mesh = require('earth-mesh')
 const cityJson = require('../util/pr-cities-population-2024.json')
 const neJson = require('../public/ne-10m-land-pr.json')
-const { defaultLabelOpts, Label, Shaders: LabelShaders } = require('tiny-label')
+const { defaultLabelOpts, Shaders: LabelShaders } = require('tiny-label')
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
 const decode = require('@rubenrodriguez/georender-pack/decode')
 const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
-const { default: GeorenderShaders } = require('@rubenrodriguez/mixmap-georender')
+const { default: GeorenderShaders, pickfb } = require('@rubenrodriguez/mixmap-georender')
 const makeTexture = require('../util/make-texture')
 
 const searchParams = new URLSearchParams(window.location.search)
@@ -29,7 +31,9 @@ const params = {
 console.log({params})
 
 const mix = mixmap(regl, {
-  extensions: ['oes_element_index_uint'],
+  extensions: [
+    'oes_element_index_uint',
+  ]
 })
 
 const prWE = [-67.356661, -65.575714] 
@@ -44,7 +48,8 @@ const prSN = [prCenter - prHorizontal/2, prCenter + prHorizontal/2]
 const map = mix.create({
   // viewbox: [-67.356661,17.854597,-65.575714,18.517377],
   viewbox: [prWE[0],prSN[0],prWE[1],prSN[1]],
-  backgroundColor: [0.5, 0.5, 0.5, 1.0],  
+  backgroundColor: [0.5, 0.5, 0.5, 1.0],
+  pickfb,
 })
 
 window.addEventListener('keydown', function (ev) {
@@ -64,7 +69,7 @@ document.body.appendChild(map.render({
   height: window.innerHeight,
 }))
 
-async function drawLabels () {
+async function createDraw () {
   const font = new FontFace('Fredoka', "url('fonts/Fredoka-SemiBold.ttf')")
   await font.load()
   document.fonts.add(font)
@@ -76,7 +81,7 @@ async function drawLabels () {
       'area-label-font': 'Fredoka',
       'area-label-font-size': 20,
       'area-label-stroke-width': 3,
-      'area-zindex': 8,
+      'area-zindex': 2,
       'area-opacity': 99,
     },
     'place.city': {
@@ -84,7 +89,9 @@ async function drawLabels () {
       'point-label-fill-color': '#000000',
       'point-label-font-size': 18,
       'point-label-stroke-width': 3,
-      'point-size': 10,
+      'point-zindex': 10,
+      'point-size[zoom<=5]': 0,
+      'point-size[zoom>=6]': 7,
     },
     'place.town': {
       'point-label-font': 'Helvetica',
@@ -92,6 +99,10 @@ async function drawLabels () {
       'point-label-font-size': 16,
       'point-label-stroke-width': 3,
       'point-size': 8,
+      'point-zindex': 10,
+      'point-fill-color': '#000000',
+      'point-size[zoom<=5]': 0,
+      'point-size[zoom>=6]': 7,
     },
     'highway.path': {
       'line-label-font': 'Helvetica',
@@ -99,17 +110,10 @@ async function drawLabels () {
       'line-label-stroke-width': 2,
       'line-label-priority': 10,
       'line-zindex': 20,
+      'line-fill-width': 6,
     },
   }
   const style = await makeTexture(stylesheet)
-
-  const label = new Label({
-    labelEngine: {
-      ...defaultLabelOpts.labelEngine,
-      outlines: true,
-    },
-    fontFamily: style.labelFontFamily,
-  })
 
   const cityGeojson = cityToOSM(cityJson)
   const neGeojson = neToOSM(neJson)
@@ -132,7 +136,12 @@ async function drawLabels () {
   // const geojson = mergeFeatures(cityPathsGeojson)
 
   // i need data in the shape of georender point labels
-  const georender = toGeorender(geojson)
+  const georender = toGeorender(geojson, {
+    propertyMap: (props) => {
+      return props
+    },
+    includeAllTags: false,
+  })
   const decodedToMerge = georender.map((buf) => {
     return decode([buf])
   })
@@ -150,93 +159,76 @@ async function drawLabels () {
     decoded,
     zoomStart: 1,
     zoomEnd: 21,
+    label: {
+      labelEngine: {
+        ...defaultLabelOpts.labelEngine,
+        outlines: true,
+      },
+      fontFamily: style.labelFontFamily,
+    },
   })
   const props = geodata.update(map)
-  console.log('{props}')
-  console.log({props})
-  console.log({style})
-  const labelProps = label.update(props, map, { style })
-  console.log({labelProps})
-
-  const labelShaders = LabelShaders(map)
+console.log({props})
   const georenderShaders = GeorenderShaders(map)
   const areasShader = georenderShaders.areas
   const lineFillShader = georenderShaders.lineFill
-  delete areasShader.pickFrag
-  delete lineFillShader.pickFrag
-  mapUniforms(areasShader)
-  mapUniforms(lineFillShader)
+  const labelShader = georenderShaders.label
+  const labelOutlinesShader = georenderShaders.outlines
+
   const draw = {
-    outlines: map.regl(labelShaders.outlines),
-    label: labelProps.atlas.map((prepared) => map.regl(labelShaders.label(prepared))),
-    areas: map.regl(areasShader),
-    linesFill: map.regl(lineFillShader),
+    outlines: map.createDraw(labelOutlinesShader),
+    areas: map.createDraw(areasShader),
+    lineFill: map.createDraw(lineFillShader),
+    point: map.createDraw(georenderShaders.points),
+    label: props.label.atlas.map((prepared) => map.createDraw(labelShader(prepared))),
   }
 
-  const atlasProps = []
-  for (let i = 0; i < labelProps.atlas.length; i++) {
-    const glyphProps = []
-    for (let j = 0; j < labelProps.atlas[i].glyphs.length; j++) {
-      for (const mapProps of map._props()) {
-        const glyph = labelProps.atlas[i].glyphs[j]
-        const { fontSize, strokeWidth } = glyph
-        const gamma = 2.0 * 1.4142 / fontSize
-        const strokeProps = {
-          ...mapProps,
-          ...glyph,
-          buffer: 0.75 - (strokeWidth/fontSize),
-          gamma,
-          color: glyph.strokeColor,
-        }
-        const fillProps = {
-          ...mapProps,
-          ...glyph,
-          buffer: 0.75,
-          gamma,
-          color: glyph.fillColor,
-        }
-        glyphProps.push(strokeProps)
-        glyphProps.push(fillProps)
-      }
-    }
-    atlasProps.push(glyphProps)
+  draw.outlines.props = [{
+    ...props.label.labelEngine,
+    color: [0, 1, 0],
+    zindex: 1000,
+  }]
+  draw.areas.props = [props.areaP]
+  draw.lineFill.props = [props.lineP]
+  draw.point.props = [props.pointP]
+  for (let i = 0; i < draw.label.length; i++) {
+    draw.label[i].props = props.label.glyphs[i]
   }
 
-  const drawWithMap = () => {
-    for (const mapProps of map._props()) {
-      draw.outlines({
-        ...mapProps,
-        ...labelProps.labelEngine,
-        color: [0, 1, 0],
-        zindex: 1000,
-      })
-      draw.areas({
-        ...mapProps,
-        ...props.areaP,
-      })
-      draw.linesFill({
-        ...mapProps,
-        ...props.lineP,  
-      })
-      for (let i = 0; i < atlasProps.length; i++) {
-        draw.label[i](atlasProps[i])
-      }
-    }
-  }
-
-  map.on('draw:end', drawWithMap)
-  map.draw()
+  // map.on('draw:end', drawWithMap)
   return {
-    draw: drawWithMap,
+    draw,
+    geojson,
+    pick: georenderShaders.pick,
   }
 }
-drawLabels()
-
-const frame = () => {
+createDraw().then(({ draw, geojson, pick }) => {
   map.draw()
-}
+  map.pick({ offsetX: 0, offsetY: 0 }, () => { return })
+  window.addEventListener('click', (event) => {
+    pick(event, (err, picked) => {
+      if (err) return console.log(err)
+      const { index, pickType } = picked
+      console.log({index,pickType})
+      if (!pickType) return
+      const pickTypeToDrawCmd = {
+        'point': 'point',
+        'line': 'lineFill',
+        'area': 'areas',
+      }
+      const drawKey = pickTypeToDrawCmd[pickType]
+      for (const props of draw[drawKey].props) {
+        const id = props.indexToId[index]
+        if (Number.isInteger(id)) {
+          console.log({id})
+          const feature = geojson.features[id]
+          console.log({feature})
+        }
+      }
+    })
+  })
+})
 
-frame()
 // map.regl.frame(frame)
 
 function cityToOSM (cityJson) {
@@ -246,7 +238,7 @@ function cityToOSM (cityJson) {
       type: 'Feature',
       properties: {
         place: city.population > 35_000 ? 'city' : 'town',
-        population: city.population,
+        // population: city.population,
         name: city.city,
       },
       geometry: {
@@ -262,10 +254,10 @@ function cityToOSM (cityJson) {
 function cityToLineString (cityJson) {
   const geojson = { type: 'FeatureCollection', features: [] }
   for (let i = 0; i < cityJson.length - 1; i++) {
+    if (i > 0) continue
     for (let j = 1; j < cityJson.length; j++) {
       const ci = cityJson[i]
       const cj = cityJson[j]
-      if (!(ci.city === 'San Juan' && cj.city === 'Guayama')) continue
       const feature = {
         type: 'Feature',
         properties: {
@@ -391,11 +383,4 @@ function mergeDecoded(mdecoded) {
     Object.assign(decoded.areaBorder.labels, d.areaBorder.labels)
   }
   return decoded
-}
-
-function mapUniforms (props) {
-  props.uniforms.viewbox = map.prop('viewbox')
-  props.uniforms.offset = map.prop('offset')
-  props.uniforms.aspect = (context) => context.viewportWidth/context.viewportHeight
-  props.uniforms.zoom = map.prop('zoom')
 }

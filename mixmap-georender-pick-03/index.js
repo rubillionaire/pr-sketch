@@ -13,7 +13,7 @@ const regl = require('regl')
 const glsl = require('glslify')
 const mixmap = require('@rubenrodriguez/mixmap')
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
-const { default: shaders, pickfb, pickUnpack } = require('@rubenrodriguez/mixmap-georender')
+const { default: shaders, pickfb } = require('@rubenrodriguez/mixmap-georender')
 const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
 const decode = require('@rubenrodriguez/georender-pack/decode')
 const makeStylesheet = require('../util/make-texture.js')
@@ -54,11 +54,13 @@ document.body.appendChild(map.render({
   height: window.innerHeight,
 }))
 
+const { areas, pick } = shaders(map, { pickType: false })
+
 window.addEventListener('click', (event) => {
-  map.pick(event, (err, picked) => {
+  pick(event, (err, picked) => {
     if (err) return console.log(err)
     console.log({picked})
-    const index = pickUnpack(picked)
+    const { index, pickType } = picked
     for (const props of draw.areas.props) {
       const id = props.indexToId[index]
       if (Number.isInteger(id)) {
@@ -67,8 +69,6 @@ window.addEventListener('click', (event) => {
     }
   })
 })
-
-const { areas } = shaders(map)
 
 const draw = {
   areas: map.createDraw(areas),
@@ -106,7 +106,7 @@ const makeMap = async () => {
     decoded: decodedToPrepare,
   })
 
-  const props = geodata.update(map.zoom)
+  const props = geodata.update(map)
 
   setProps(draw.areas.props, props.areaP)
 

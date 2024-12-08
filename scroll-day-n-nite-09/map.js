@@ -25,7 +25,7 @@ const tilebelt = require('@mapbox/tilebelt')
 const vectorizeText = require("vectorize-text")
 
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
-const { default: shaders, pickFrag, pickfb } = require('@rubenrodriguez/mixmap-georender')
+const { default: shaders, pickFragNoType, pickfb } = require('@rubenrodriguez/mixmap-georender')
 const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
 const decode = require('@rubenrodriguez/georender-pack/decode')
 const featuresJSON = require('@rubenrodriguez/georender-pack/features.json')
@@ -441,22 +441,18 @@ async function createProps ({ maps, includeIsland=false }) {
       styleTexture,
       imageSize: [style.width, style.height],
       decoded,
-      propsArea: (props) => {
-        return Object.assign({}, props, {
-          elevation: decoded.area.elevation,  
-        })
-      },
-      propsLineP: (props) => {
-        const radiating = {
-          radiatingCoastlineBufferIndex: decoded.line.radiatingCoastlineBufferIndex,
-          radiatingCoastlineBufferDistance: decoded.line.radiatingCoastlineBufferDistance,
-        }
-        const additional = includeAllTags ? radiating : {}
-        return Object.assign({}, props, additional)
+      extend: (attributes, props) => {
+        attributes.area.elevation = 1
+        props.area.elevation = decoded.area.elevation
+
+        attributes.line.radiatingCoastlineBufferIndex = 1
+        attributes.line.radiatingCoastlineBufferDistance = 1
+        props.line.radiatingCoastlineBufferIndex = decoded.line.radiatingCoastlineBufferIndex
+        props.line.radiatingCoastlineBufferDistance = decoded.line.radiatingCoastlineBufferDistance
       },
     })
 
-    const georenderProps = geodata.update(map.zoom)
+    const georenderProps = geodata.update(map)
     props.georender.push({ mixName, georenderProps })
   }
   // style-georender : end
@@ -626,15 +622,13 @@ function createDraws ({
         radiatingCoastlineBufferIndex: map.prop('radiatingCoastlineBufferIndex'),
         radiatingCoastlineBufferDistance: map.prop('radiatingCoastlineBufferDistance'),
       }),
-      vert: glsl`
+      vert: `
         precision highp float;
-        #pragma glslify: Line = require('glsl-georender-style-texture/line.h');
-        #pragma glslify: readLine = require('glsl-georender-style-texture/line.glsl');
         attribute vec2 position, normal, dist;
         attribute float featureType, index;
         attribute float radiatingCoastlineBufferIndex, radiatingCoastlineBufferDistance;
         uniform vec4 viewbox;
-        uniform vec2 offset, size;
+        uniform vec2 offset, size, texSize;
         uniform float displayThreshold, featureCount, aspect, zoom;
         uniform sampler2D styleTexture;
         varying float vft, vindex, zindex, vdashLength, vdashGap, vDisplay;
@@ -642,9 +636,89 @@ function createDraws ({
         varying vec4 vcolor;
         varying float vRadiatingCoastlineBufferIndex, vRadiatingCoastlineBufferDistance;
         varying vec2 vPosLonLat;
+        struct Line {
+          vec4 fillColor;
+          vec4 strokeColor;
+          float fillDashLength;
+          float fillDashGap;
+          float strokeDashLength;
+          float strokeDashGap;
+          float fillWidth;
+          float strokeWidthInner;
+          float strokeWidthOuter;
+          float zindex;
+          vec4 labelFillColor;
+          vec4 labelStrokeColor;
+          float labelFont;
+          float labelFontSize;
+          float labelPriority;
+          float labelConstraints;
+          float labelStrokeWidth;
+          float labelSprite;
+          float labelSpritePlacement;
+        };
+
+        const float zoomStart = 1.0;
+        const float zoomCount = 21.0;
+        const float pointHeight = 7.0*zoomCount;
+        const float lineStart = pointHeight;
+
+        Line readLine(sampler2D styleTexture, float featureType, float zoom, vec2 imageSize) {
+          float n = 8.0;
+          float px = featureType; //pixel x
+          float py = lineStart + n * (floor(zoom) - zoomStart); //pixel y
+
+          vec4 d0 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+0.0)/imageSize.y + 0.5/imageSize.y)) * vec4(1,1,1,2.55);
+
+          vec4 d1 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+1.0)/imageSize.y + 0.5/imageSize.y)) * vec4(1,1,1,2.55);
+
+          vec4 d2 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+2.0)/imageSize.y + 0.5/imageSize.y)) * 255.0;
+
+          vec4 d3 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+3.0)/imageSize.y + 0.5/imageSize.y)) * 255.0;
+
+          vec4 d4 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+4.0)/imageSize.y + 0.5/imageSize.y)) * vec4(1,1,1,2.55);
+
+          vec4 d5 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+5.0)/imageSize.y + 0.5/imageSize.y)) * vec4(1,1,1,2.55);
+
+          vec4 d6 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+6.0)/imageSize.y + 0.5/imageSize.y)) * 255.0;
+
+          vec4 d7 = texture2D(styleTexture, vec2(
+            px/imageSize.x+0.5/imageSize.x, (py+7.0)/imageSize.y + 0.5/imageSize.y)) * 255.0;
+
+
+          Line line;
+          line.fillColor = d0;
+          line.strokeColor = vec4(d1.xyz, d0.w);
+          line.fillDashLength = d2.x;
+          line.fillDashGap = d2.y;
+          line.strokeDashLength = d2.z;
+          line.strokeDashGap = d2.w;
+          line.fillWidth = d3.x;
+          line.strokeWidthInner = d3.y;
+          line.strokeWidthOuter = d3.z;
+          line.zindex = d3.w;
+          line.labelFillColor = d4;
+          line.labelStrokeColor = d5;
+          line.labelFont = d6.x;
+          line.labelFontSize = d6.y;
+          line.labelPriority = d6.z;
+          line.labelConstraints = d6.w;
+          line.labelStrokeWidth = d7.x;
+          line.labelSprite = d7.y*256.0 + d7.z;
+          line.labelSpritePlacement = d7.w;
+          return line;
+        }
+
         void main () {
           vft = featureType;
-          Line line = readLine(styleTexture, featureType, zoom, featureCount);
+          Line line = readLine(styleTexture, featureType, zoom, texSize);
           vcolor = line.fillColor;
           vdashLength = line.fillDashLength;
           vdashGap = line.fillDashGap;
@@ -910,7 +984,7 @@ function createDraws ({
         gl_FragColor = vec4(colorLights.xyz, opacity);
       }
     `,
-    pickFrag,
+    pickFrag: pickFragNoType,
   }
 
   // terrain-img:start

@@ -33,6 +33,7 @@ console.log({params})
 const mix = mixmap(regl, {
   extensions: [
     'oes_element_index_uint',
+    'angle_instanced_arrays',
   ]
 })
 
@@ -146,14 +147,13 @@ async function createDraw () {
     return decode([buf])
   })
   const decoded = mergeDecoded(decodedToMerge)
-  const stylePixels = {
+  const styleTexture = map.regl.texture({
     data: style.data,
     width: style.width,
     height: style.height,
-  }
-  const styleTexture = map.regl.texture(stylePixels)
+  })
   const geodata = prepare({
-    stylePixels,
+    stylePixels: style.data,
     styleTexture,
     imageSize: [style.width, style.height],
     decoded,

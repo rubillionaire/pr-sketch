@@ -54,9 +54,10 @@ document.body.appendChild(map.render({
   height: window.innerHeight,
 }))
 
-const { areas, pick } = shaders(map, { pickType: false })
+const { areas, pick } = shaders(map)
 
 window.addEventListener('click', (event) => {
+  console.log('click')
   pick(event, (err, picked) => {
     if (err) return console.log(err)
     console.log({picked})
@@ -115,7 +116,7 @@ const makeMap = async () => {
   // on the first actual user pick
   // TODO is this based on the timing? like, is our javascript progressing
   // faster than the draw call?
-  map.pick({ offsetX: 0, offsetY: 0 }, () => { return })
+  // map.pick({ offsetX: 0, offsetY: 0 }, () => { return })
 }
 
 makeMap()

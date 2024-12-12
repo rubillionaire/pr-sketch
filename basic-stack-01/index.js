@@ -13,16 +13,16 @@
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
-const lpb = require('length-prefixed-buffers/without-count')
-const getImagePixels = require('get-image-pixels')
 const decode = require('@rubenrodriguez/georender-pack/decode')
+const { decode: decodePng } = require('fast-png')
 const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
-const { default: GeorenderShaders } = require('@rubenrodriguez/mixmap-georender')
-const b4a = require('b4a')
+const { default: GeorenderShaders, pickfb } = require('@rubenrodriguez/mixmap-georender')
+const lpb = require('length-prefixed-buffers')
 
 const mix = mixmap(regl, {
   extensions: [
     'oes_element_index_uint',
+    'angle_instanced_arrays',
   ]
 })
 
@@ -34,11 +34,13 @@ const prHorizontal = (prWE[1] - prWE[0])
 const prHeight = (window.innerWidth/window.innerHeight * prHorizontal)
 // const prSN = [prCenter - prHeight/2, prCenter + prHeight/2]
 const prSN = [prCenter - prHorizontal/2, prCenter + prHorizontal/2]
+console.log([prWE[0],prSN[0],prWE[1],prSN[1]])
 
 const map = mix.create({
   // viewbox: [-67.356661,17.854597,-65.575714,18.517377],
   viewbox: [prWE[0],prSN[0],prWE[1],prSN[1]],
   backgroundColor: [0.5, 0.5, 0.5, 1.0],
+  pickfb,
 })
 
 window.addEventListener('resize', () => {
@@ -54,28 +56,31 @@ document.body.appendChild(map.render({
 var geoRender = GeorenderShaders(map)
 
 var draw = {
-  area: map.createDraw(geoRender.areas),
-  areaBorder: map.createDraw(geoRender.areaBorders),
-  lineFill: map.createDraw(geoRender.lineFill),
-  lineStroke: map.createDraw(geoRender.lineStroke),
-  point: map.createDraw(geoRender.points),
+  areaP: map.createDraw(geoRender.areas),
+  areaBorderP: map.createDraw(geoRender.areaBorders),
+  lineFillP: map.createDraw(geoRender.lineFill),
+  lineStrokeP: map.createDraw(geoRender.lineStroke),
+  pointP: map.createDraw(geoRender.points),
   label: [],
 }
 
 resl({
   manifest: {
     style: {
-      type: 'image',
-      src: './style-textures/place-island.png',
+      type: 'binary',
+      src: './style-textures/georender-basic-setup-style.png',
+      parser: (data) => {
+        return decodePng(data)
+      },
     },
     label: {
       type: 'text',
       parser: JSON.parse,
-      src: './style-textures/place-island.json',
+      src: './style-textures/georender-basic-setup-label.json',
     },
     decoded: {
       type: 'text',
-      src: './georender/mie-georender.nlb64',
+      src: './georender/basic-stack-georender.nlb64',
       parser: (data) => {
         const bufs = []
         for (const enc of data.split('\n')) {
@@ -91,27 +96,50 @@ resl({
 })
 
 function ready ({ style, decoded, label }) {
-  console.log({decoded})
+  console.log(decoded)
+  const stylePixels = style.data
   var prep = prepare({
-    stylePixels: getImagePixels(style),
+    stylePixels,
     styleTexture: map.regl.texture(style),
     zoomStart: 1,
     zoomEnd: 21,
     imageSize: [style.width, style.height],
     decoded,
-    // label,
+    label,
   })
   update()
   map.on('viewbox', function () {
     update()
   })
+  window.addEventListener('click', function (event) {
+    console.log('click')
+    geoRender.pick(event, (err, picked) => {
+      if (err) return console.log(err)
+      const { index, pickType } = picked
+      if (!draw[pickType]) return console.log(`no pickType: ${pickType}`)
+      let ref = null
+      for (let i = 0; i < draw[pickType].props.length; i++) {
+        const p = draw[pickType].props[i]
+        if (p.indexToId[index] !== undefined) {
+          ref = { id: p.indexToId[index], pi: i }
+          break
+        }
+      }
+      if (ref) {
+        const labels = (draw[pickType].props[ref.pi].labels[ref.id] || [])
+          .map(l => l.split('=')[1])
+        console.log(Object.assign({ labels }, ref))
+      }
+      else console.log(`no matching feature id found. index: ${index}, pickType: ${pickType}`)
+    })
+  })
   function update() {
     const props = prep.update(map)
-    draw.area.props = [props.areaP]
-    draw.areaBorder.props = [props.areaBorderP]
-    draw.lineFill.props = [props.lineP]
-    draw.lineStroke.props = [props.lineP]
-    draw.point.props = [props.pointP]
+    draw.areaP.props = [props.areaP]
+    draw.areaBorderP.props = [props.areaBorderP]
+    draw.lineFillP.props = [props.lineP]
+    draw.lineStrokeP.props = [props.lineP]
+    draw.pointP.props = [props.pointP]
     draw.label = props.label.atlas.map((prepared) => map.createDraw(geoRender.label(prepared)))
     for (let i = 0; i < draw.label.length; i++) {
       draw.label[i].props = props.label.glyphs[i]

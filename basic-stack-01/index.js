@@ -17,7 +17,8 @@ const decode = require('@rubenrodriguez/georender-pack/decode')
 const { decode: decodePng } = require('fast-png')
 const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
 const { default: GeorenderShaders, pickfb } = require('@rubenrodriguez/mixmap-georender')
-const lpb = require('length-prefixed-buffers')
+// const lpb = require('length-prefixed-buffers')
+// const b4a = require('b4a')
 
 const mix = mixmap(regl, {
   extensions: [
@@ -90,6 +91,21 @@ resl({
         }
         return decode(bufs)
       },
+      /// does not work, tried:
+      /// Buffer.from
+      /// b4a.from
+      /// new Uint8Array
+      // type: 'binary',
+      // src: './georender/basic-stack-georender.lpb',
+      // parser: (data) => {
+      //   const buf = b4a.from(data)
+      //   console.log({buf})
+      //   const bufs = lpb.decode(buf)
+      //   console.log({bufs})
+      //   const georender = decode(bufs)
+      //   console.log({georender})
+      //   return georender
+      // },
     }
   },
   onDone: ready,

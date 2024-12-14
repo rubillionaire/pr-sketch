@@ -7,7 +7,10 @@ const geojson2mesh = require('earth-mesh')
 const { default: tileGrid } = require('mixmap-tile-grid')
 
 const mix = mixmap(regl, {
-  extensions: ['oes_element_index_uint'],
+  extensions: [
+    'oes_element_index_uint',
+    'angle_instanced_arrays',
+  ],
 })
 
 const prWE = [-67.356661, -65.575714] 
@@ -23,8 +26,6 @@ const map = mix.create({
   viewbox,
   backgroundColor: [0.5, 0.5, 0.5, 1.0],  
 })
-
-tileGrid(map, { zindex: 2 })
 
 const drawNE = map.createDraw({
   vert: `
@@ -60,11 +61,13 @@ const drawNE = map.createDraw({
   elements: map.prop('cells'),
 })
 
+tileGrid(map, { zindex: 2, label: { outlines: true } })
+
 resl({
   manifest: {
     neGeojson: {
       type: 'text',
-      src: 'ne-10m-land-pr.json',
+      src: 'ne-110m-land.json',
       parser: JSON.parse,
     },
   },

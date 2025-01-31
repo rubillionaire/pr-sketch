@@ -9,17 +9,20 @@
 // - `georender-style2png` @ git hash `fda2e22`
 // - 02
 // - mixmap-georender@6 text integration
+// - 03
+// - interating on tiny-label@2
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
 const geojson2mesh = require('earth-mesh')
 const cityJson = require('../util/pr-cities-population-2024.json')
 const neJson = require('../public/ne-10m-land-pr.json')
-const { defaultLabelOpts, Shaders: LabelShaders } = require('tiny-label')
+const { defaultLabelOpts, Label, Shaders: LabelShaders } = require('tiny-label')
 const toGeorender = require('@rubenrodriguez/georender-geojson/to-georender')
 const decode = require('@rubenrodriguez/georender-pack/decode')
-const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
+const { default: prepare, propsForMap, spreadStyleTexture } = require('@rubenrodriguez/mixmap-georender/prepare')
 const { default: GeorenderShaders, pickfb } = require('@rubenrodriguez/mixmap-georender')
+const { createGlyphProps } = require('@rubenrodriguez/mixmap-georender/text')
 const makeTexture = require('../util/make-texture')
 
 const searchParams = new URLSearchParams(window.location.search)
@@ -75,6 +78,7 @@ async function createDraw () {
   await font.load()
   document.fonts.add(font)
 
+  // stylesheet can be preprocessed and fetched in a production environment
   const stylesheet = {
     'place.island': {
       'area-fill-color': '#ee0066',
@@ -136,7 +140,8 @@ async function createDraw () {
   const geojson = mergeFeatures(...geojsons)
   // const geojson = mergeFeatures(cityPathsGeojson)
 
-  // i need data in the shape of georender point labels
+  // the ultimate `decoded` variable here could be preprocessed
+  // and fetched in a production environment
   const georender = toGeorender(geojson, {
     propertyMap: (props) => {
       return props
@@ -159,40 +164,51 @@ async function createDraw () {
     decoded,
     zoomStart: 1,
     zoomEnd: 21,
-    label: {
-      labelEngine: {
-        ...defaultLabelOpts.labelEngine,
-        outlines: true,
-      },
-      fontFamily: style.labelFontFamily,
-    },
+    // label: {
+    //   labelEngine: {
+    //     ...defaultLabelOpts.labelEngine,
+    //     outlines: true,
+    //   },
+    //   fontFamily: style.labelFontFamily,
+    // },
   })
-  const props = geodata.update(map)
-console.log({props})
+  const labels = new Label({
+    labelEngine: {
+      ...defaultLabelOpts.labelEngine,
+      outlines: true,
+    },
+    fontFamily: style.labelFontFamily,
+    style,
+  })
+  const props = geodata.update(propsForMap(map))
+  const labelProps = labels.update(props, propsForMap(map), { style })
+  spreadStyleTexture(styleTexture, props)
+  createGlyphProps(labelProps, map)
+
   const georenderShaders = GeorenderShaders(map)
   const areasShader = georenderShaders.areas
   const lineFillShader = georenderShaders.lineFill
-  const labelShader = georenderShaders.label
-  const labelOutlinesShader = georenderShaders.outlines
+
+  const labelShaders = LabelShaders(map)
 
   const draw = {
-    outlines: map.createDraw(labelOutlinesShader),
+    outlines: map.createDraw(labelShaders.outlines),
     areas: map.createDraw(areasShader),
     lineFill: map.createDraw(lineFillShader),
     point: map.createDraw(georenderShaders.points),
-    label: props.label.atlas.map((prepared) => map.createDraw(labelShader(prepared))),
+    label: style.labelFontFamily.map(() => map.createDraw(labelShaders.label)),
   }
 
   draw.outlines.props = [{
-    ...props.label.labelEngine,
+    ...labelProps.labelEngine,
     color: [0, 1, 0],
     zindex: 1000,
   }]
   draw.areas.props = [props.areaP]
   draw.lineFill.props = [props.lineP]
   draw.point.props = [props.pointP]
-  for (let i = 0; i < draw.label.length; i++) {
-    draw.label[i].props = props.label.glyphs[i]
+  for (let i = 0; i < style.labelFontFamily.length; i++) {
+    draw.label[i].props = labelProps.glyphs[i]
   }
 
   // map.on('draw:end', drawWithMap)

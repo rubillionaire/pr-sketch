@@ -5,10 +5,35 @@
 // - adds vector tiles (admin lines and highways)
 // - 03
 // - toggle on angel_instanced_arrays and turn on city point features
+// - 03-00
+// - this map remains the same, but the underlying pmtiles implementation
+// no longer goes from geojson -> georender -> gpu props, but instead directly
+// from geojson -> gpu props
+// - 03-01
+// - adds labeling using latest mixmap-pmtiles internals
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
-const { default: MixmapPMTiles, TileType, RasterShaders } = require('mixmap-pmtiles')
+const {
+  default: MixmapPMTiles,
+  TileType,
+  RasterShaders,
+  StencilShaders,
+  tilesForBbox,
+  layerTileIndex,
+  propsForMap,
+  spreadStyleTexture,
+  tileKeyToProps,
+  getImagePixels,
+  bboxToMesh,
+  fullEarthMesh,
+  GeorenderShaders,
+  mixmapUniforms,
+  TileSetTracker,
+} = require('mixmap-pmtiles')
+const { decode: decodePng } = require('fast-png')
+const { propsIncludeLabels } = require('@rubenrodriguez/mixmap-georender/text')
+const { createGlyphProps, Label } = require('tiny-label')
 const { default: tileGrid } = require('mixmap-tile-grid')
 const mix = mixmap(regl, {
   extensions: [
@@ -91,7 +116,7 @@ function addElevation ({ zindex }) {
     frag: `
       precision highp float;
 
-      uniform sampler2D texture;
+      uniform sampler2D raster;
       uniform float maxElevation, zoom;
       uniform vec2 texelSize, zoomRange;
       uniform vec3 dotColor;
@@ -121,7 +146,7 @@ function addElevation ({ zindex }) {
       }
 
       void main () {
-        vec4 sample = texture2D(texture, vtcoord);
+        vec4 sample = texture2D(raster, vtcoord);
         if (sample.a < 1.0) {
           gl_FragColor = vec4(0.0);
           return;
@@ -130,7 +155,7 @@ function addElevation ({ zindex }) {
         float tileDim = mix(80.0, 800.0, z);
         vec2 tileSize = vec2(tileDim);
         vec2 origin = tileSpaceCenter(vtcoord, tileSize);
-        vec4 originSample = texture2D(texture, origin);
+        vec4 originSample = texture2D(raster, origin);
         vec2 tiled = tileSpace(vpos, tileSize);
         float elevation = texelToElevation(originSample.xyz);
         float normElevation = clamp(elevation/maxElevation, 0.0, 1.0);
@@ -215,7 +240,7 @@ function addShoreBuffer ({ zindex }) {
     frag: `
       precision highp float;
 
-      uniform sampler2D texture;
+      uniform sampler2D raster;
       uniform float zoom;
       uniform vec2 zoomRange, periodRange;
       uniform vec3 colorBg, colorFg;
@@ -224,7 +249,7 @@ function addShoreBuffer ({ zindex }) {
       varying vec2 vpos;
 
       void main () {
-        vec4 sample = texture2D(texture, vtcoord);
+        vec4 sample = texture2D(raster, vtcoord);
         if (sample.a < 1.0 || sample.x < 0.001) {
           discard;
           return;
@@ -272,12 +297,227 @@ function addMvt ({ includePnts=true }={}) {
   style.src = './style-textures/pr-mie.png'
 }
 
+function addMvtModularly () {
+  resl({
+    manifest: {
+      style: {
+        type: 'binary',
+        src: './style-textures/pr-mie.png',
+        parser: (data) => {
+          return decodePng(data)
+        },
+      },
+      labelOpts: {
+        type: 'text',
+        parser: JSON.parse,
+        src: './style-textures/georender-basic-setup-label.json',
+      }
+    },
+    onDone: ready,
+  })
+  async function ready ({ style, labelOpts }) {
+    const draw = {}
+    // init within a worker, `update` per tile set
+    const labels = new Label(labelOpts)
 
-// tileGrid(map, { zindex: 1 })
+    // georender-shader-draw-key : [georender-prepare-prop-keys]
+    const spread = {
+      areas: ['areaP', 'areaT'],
+      areaBorders: ['areaBorderP', 'areaBorderT'],
+      lineStroke: ['lineP', 'lineT'],
+      lineFill: ['lineP', 'lineT'],
+      points: ['pointP', 'pointT'],
+    }
+    const georenderShaders = GeorenderShaders(map)
+    const stencilShaders = StencilShaders(map)
+
+    // created draws
+    for (const drawKey in spread) {
+      const shader = georenderShaders[drawKey]
+      delete shader.pickFrag
+      draw[drawKey] = map.regl({
+        ...shader,
+        ...stencilShaders.tileStencilHonor,
+        uniforms: {
+          ...shader.uniforms,
+          ...mixmapUniforms(map),
+        }
+      })
+    }
+    draw.stencil = {
+      reset: map.regl(stencilShaders.tileStencilReset),
+      mark: map.regl(stencilShaders.tileStencilMark),
+    }
+
+    draw.label = labelOpts.fontFamily.map(() => map.regl({
+      ...georenderShaders.label,
+      uniforms: {
+        ...georenderShaders.label.uniforms,
+        ...mixmapUniforms(map),
+      }
+    }))
+
+    const tileSetTracker = new TileSetTracker()
+
+    // tileKey : { tileBbox, tileProps }
+    const tileKeyPropsMap = new Map()
+    let processLabels = false
+    let previousProcessLabels = false
+    map.on('draw:end', () => {
+      console.log('draw-end-draws')
+      drawVectorTiles(map, tileKeyPropsMap, draw, spread, labelOpts)
+      if (tileSetTracker.isLoaded()) {
+        drawLabels(map, draw, tileKeyPropsMap, labels, labelUpdateOpts)
+      }
+    })
+    const stylePixels = style.data
+    const imageSize = [style.width, style.height]
+    const styleTexture = map.regl.texture(style)
+    const labelUpdateOpts = {
+      style: {
+        data: stylePixels,
+        width: style.width,
+        height: style.height,
+        labelFontFamily: labelOpts.fontFamily,
+      },
+      labelFeatureTypes: ['point'],
+    }
+
+    map.addLayer({
+      viewbox: (bbox, zoom, cb) => {
+        const tiles = tilesForBbox(bbox, zoom)
+        // TODO figure out why we compute more tiles
+        // than we actually end up intersecting with our bbox
+        // layerCountTarget = tiles.length
+        const layerTiles = layerTileIndex(tiles)
+        tileSetTracker.setKeysQueued(Object.keys(layerTiles))
+        cb(null, layerTiles)
+      },
+      add: async (tileKey, tileBbox) => {
+        try {
+          const mapProps = propsForMap(map)
+          const { tileProps } = await tileKeyToProps({
+            mapProps,
+            source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
+            tileType: TileType.Mvt,
+            tileKey,
+            tileBbox,
+            prepare: {
+              stylePixels,
+              imageSize,
+              label: labelOpts,
+            },
+          })
+
+          tileSetTracker.setKeyLoaded(tileKey)
+          const processLabels = tileSetTracker.isLoaded()
+          console.log('processLabels', processLabels)
+
+          if (tileProps === null && processLabels) {
+            console.log('tile-props:null', tileKey)
+            drawLabels(map, draw, tileKeyPropsMap, labels, labelUpdateOpts)
+            return
+          }
+          if (tileProps?.texture) {
+            tileProps.texture = map.regl.texture(tileProps.texture)
+          }
+          else {
+            // if we are dealing with georender props, we want to
+            // spread our style texture within
+            spreadStyleTexture(styleTexture, tileProps)
+          }
+          tileKeyPropsMap.set(tileKey, { tileBbox, tileProps })
+          drawVectorTiles(map, tileKeyPropsMap, draw, spread)
+          if (processLabels) {
+            drawLabels(map, draw, tileKeyPropsMap, labels, labelUpdateOpts)
+          }
+        }
+        catch (error) {
+          console.log(error)
+        }
+      },
+      remove: (tileKey, tileBbox) => {
+        tileSetTracker.remove(tileKey)
+        tileKeyPropsMap.delete(tileKey)
+      },
+    })
+    // map.on('viewbox:internal:end', () => {
+    //   console.log('layerTiles', map._layerTiles.length)  
+    // })
+  }
+
+  // context provides:
+  // - labels (tiny-label instance)
+  // - labelUpdateOpts (tiny-label.update options)
+  function drawLabels (map, draw, tileKeyPropsMap, labels, labelUpdateOpts) {
+    const georenderPropsForLabels = []
+    for (const [tileKey, { tileProps }] of tileKeyPropsMap) {
+      if (propsIncludeLabels(tileProps)) {
+        georenderPropsForLabels.push(tileProps)
+      }
+    }
+    console.log('render-labels:start', tileKeyPropsMap.size)
+    const t0 = performance.now()
+    const labelProps = labels.update(georenderPropsForLabels, propsForMap(map), labelUpdateOpts)
+    const t1 = performance.now()
+    console.log({labelProps})
+    // // back on main thread
+    createGlyphProps(labelProps, map)  
+    const t2 = performance.now()
+    for (const mapProps of map._props()) {
+      for (let i = 0; i < labelProps.glyphs.length; i++) {
+        const glyphProps = []
+        for (let j = 0; j < labelProps.glyphs[i].length; j++) {
+          glyphProps.push({
+            ...labelProps.glyphs[i][j],
+            ...mapProps,
+          })
+        }
+        draw.label[i](glyphProps)
+      }  
+    }
+    const t3 = performance.now()
+    console.log('render-labels:end', t1-t0, t2-t1, t3-t2)
+  }
+
+  function drawVectorTiles (map, tileKeyPropsMap, draw, spread) {
+    console.log('draw-vector-tiles', tileKeyPropsMap.size)
+    // TODO write a common `drawRasterTile` setup as well
+    for (const mapProps of map._props()) {
+      const tileResetProps = {
+        ...mapProps,
+        ...fullEarthMesh(),
+      }
+      for (const [tileKey, { tileBbox, tileProps }] of tileKeyPropsMap) {
+        if (!tileProps) continue
+        const tileMarkProps = {
+          ...mapProps,
+          ...bboxToMesh(tileBbox),
+        }
+        draw.stencil.reset(tileResetProps)
+        draw.stencil.mark(tileMarkProps)
+        for (const drawKey in spread) {
+          for (const tilePropKey of spread[drawKey]) {
+            if (!draw[drawKey]) continue
+            if (!tileProps[tilePropKey]) continue
+            draw[drawKey]({
+              ...mapProps,
+              ...tileProps[tilePropKey],
+            })
+          }
+        }
+      }
+    }
+  }
+}
+
+
+tileGrid(map, { zindex: 1000, color: [0,0,0,1] })
 addWaterBg({ zindex: 1 })
 addShoreBuffer({ zindex: 20 })
 addElevation({ zindex: 30 })
-addMvt({ includePnts: true })
+// addMvt({ includePnts: true })
+addMvtModularly()
 
 window.addEventListener('keydown', function (ev) {
   if (ev.code === 'Equal') {
@@ -296,22 +536,3 @@ document.body.appendChild(map.render({
   width: window.innerWidth,
   height: window.innerHeight,
 }))
-
-function bboxToMesh (bbox) {
-  return {
-    positions: [
-      bbox[0], bbox[1],
-      bbox[0], bbox[3],
-      bbox[2], bbox[3],
-      bbox[0], bbox[1],
-      bbox[2], bbox[3],
-      bbox[2], bbox[1]
-    ],
-    cells: [0, 1, 2, 3, 4, 5]
-  }
-}
-
-function fullEarthMesh () {
-  const bbox = [-180, -90, 180, 90]
-  return bboxToMesh(bbox)
-}

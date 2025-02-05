@@ -9,14 +9,18 @@
 // - decoding buffers correctly
 // - todo: render labels
 // - todo: render points
+// - mixmap-georender@6
+// - 01-00
+// - mixmap-georedner@7
 
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
 const decode = require('@rubenrodriguez/georender-pack/decode')
 const { decode: decodePng } = require('fast-png')
-const { default: prepare } = require('@rubenrodriguez/mixmap-georender/prepare')
+const { default: prepare, propsForMap } = require('@rubenrodriguez/mixmap-georender/prepare')
 const { default: GeorenderShaders, pickfb } = require('@rubenrodriguez/mixmap-georender')
+const { createGlyphProps } = require('@rubenrodriguez/mixmap-georender/text')
 // const lpb = require('length-prefixed-buffers')
 // const b4a = require('b4a')
 
@@ -112,7 +116,8 @@ resl({
 })
 
 function ready ({ style, decoded, label }) {
-  console.log(decoded)
+  draw.label = label.fontFamily.map(() => map.createDraw(geoRender.label))
+
   const stylePixels = style.data
   var prep = prepare({
     stylePixels,
@@ -150,13 +155,17 @@ function ready ({ style, decoded, label }) {
     })
   })
   function update() {
-    const props = prep.update(map)
+    // this can happen in a worker
+    const props = prep.update(propsForMap(map))
+    // this needs to happen with full map access because we need our
+    // webgl context available (map.regl.texture)
+    createGlyphProps(props.label, map)
     draw.areaP.props = [props.areaP]
     draw.areaBorderP.props = [props.areaBorderP]
     draw.lineFillP.props = [props.lineP]
     draw.lineStrokeP.props = [props.lineP]
     draw.pointP.props = [props.pointP]
-    draw.label = props.label.atlas.map((prepared) => map.createDraw(geoRender.label(prepared)))
+
     for (let i = 0; i < draw.label.length; i++) {
       draw.label[i].props = props.label.glyphs[i]
     }

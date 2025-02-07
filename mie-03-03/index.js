@@ -217,8 +217,8 @@ function addElevation ({ zindex }) {
     `,
   }
   new MixmapPMTiles(map, {
-    // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/terrain-dem-v1-clipped-pr.pmtiles',
-    source: 'http://localhost:9966/pmtiles/terrain-dem-v1-clipped-pr.pmtiles',
+    source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/terrain-dem-v1-clipped-pr.pmtiles',
+    // source: 'http://localhost:9966/pmtiles/terrain-dem-v1-clipped-pr.pmtiles',
     tileType: TileType.Png,
     shaders: {
       elevation,
@@ -320,8 +320,8 @@ function addShoreBuffer ({ zindex }) {
     },
   }
   new MixmapPMTiles(map, {
-    // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-shore-buffered.pmtiles',
-    source: 'http://localhost:9966/pmtiles/pr-shore-buffered.pmtiles',
+    source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-shore-buffered.pmtiles',
+    // source: 'http://localhost:9966/pmtiles/pr-shore-buffered.pmtiles',
     tileType: TileType.Png,
     shaders: {
       taper,
@@ -334,8 +334,8 @@ function addMvt ({ includePnts=true }={}) {
   var style = new Image
   style.onload = function () {
     new MixmapPMTiles(map, {
-      // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
-      source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
+      source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
+      // source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
       tileType: TileType.Mvt,
       style,  
       filterFeature,
@@ -357,18 +357,15 @@ function addMvtModularly () {
       labelOpts: {
         type: 'text',
         parser: JSON.parse,
-        src: './style-textures/georender-basic-setup-label.json',
+        src: './style-textures/pr-mie.json',
       }
     },
     onDone: ready,
   })
   async function ready ({ style, labelOpts }) {
+    // mixmap-pmtiles-inputs : start
+    // - this includes `style` & `labelOpts`
     const draw = {}
-    // init within a worker, `update` per tile set
-    workerBrokers.labelProps.postMessage({
-      type: 'options',
-      payload: labelOpts,
-    })
 
     // georender-shader-draw-key : [georender-prepare-prop-keys]
     const spread = {
@@ -406,6 +403,14 @@ function addMvtModularly () {
         ...mixmapUniforms(map),
       }
     }))
+    // mixmap-pmtiles-inputs : end
+
+    // mixmap-pmtiles-internals : start
+    // init within a worker, `update` per tile set
+    workerBrokers.labelProps.postMessage({
+      type: 'options',
+      payload: labelOpts,
+    })
 
     const tileSetTracker = new TileSetTracker()
 
@@ -420,6 +425,7 @@ function addMvtModularly () {
     map.on('draw:end', () => {
       if (!tileSetTracker.isLoaded()) return
       if (!labelProps) return
+      // draw any labels we have accumulated
       drawLabels(map, draw, labelProps)
     })
     const stylePixels = style.data
@@ -471,24 +477,27 @@ function addMvtModularly () {
       if (!tileSetTracker.isLoaded()) return
       if (msg.detail.type !== 'update') return
       labelProps = msg.detail.labelProps
-      drawLabels(map, draw, labelProps)
+      map.draw()
     })
 
     map.addLayer({
       viewbox: (bbox, zoom, cb) => {
         const tiles = tilesForBbox(bbox, zoom)
-        // TODO figure out why we compute more tiles
-        // than we actually end up intersecting with our bbox
-        // layerCountTarget = tiles.length
         const layerTiles = layerTileIndex(tiles)
-        tileSetTracker.setKeysQueued(Object.keys(layerTiles))
+        const { keyAdded } = tileSetTracker.setKeysQueued(Object.keys(layerTiles))
+        // our viewbox changed, but tile set did not
+        // we should re-compute label positions
+        if (!keyAdded && tileSetTracker.isLoaded()) {
+          getLabelProps(map, tileKeyPropsMap, labelUpdateOpts)
+        }
         cb(null, layerTiles)
       },
       add: async (tileKey, tileBbox) => {
         const mapProps = propsForMap(map)
         const workerMessage = {
           mapProps,
-          source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
+          source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
+          // source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
           tileType: TileType.Mvt,
           tileKey,
           tileBbox,
@@ -498,7 +507,6 @@ function addMvtModularly () {
             // label: labelOpts,
           },
         }
-        // const workerMessage = stylePixels
         const workerTransfer = []
         workerBrokers.tileProps.postMessage(workerMessage, workerTransfer, tileKey)
       },
@@ -507,6 +515,7 @@ function addMvtModularly () {
         tileKeyPropsMap.delete(tileKey)
       },
     })
+    // mixmap-pmtiles-internals : end
   }
 
   function getLabelProps (map, tileKeyPropsMap, labelUpdateOpts) {
@@ -614,17 +623,17 @@ function addMvtModularly () {
 }
 
 
-tileGrid(map, {
-  zindex: 50,
-  color: [0,0,0,1],
-  label: {
-    zindex: 51,
-    fontSize: 14,
-    fillColor: [1,1,1,1],
-    strokeColor: [0,0,0,1],
-  },
-})
 addWaterBg({ zindex: 1 })
+// tileGrid(map, {
+//   zindex: 2,
+//   color: [0,0,0,1],
+//   label: {
+//     zindex: 51,
+//     fontSize: 14,
+//     fillColor: [1,1,1,1],
+//     strokeColor: [0,0,0,1],
+//   },
+// })
 addShoreBuffer({ zindex: 20 })
 addElevation({ zindex: 30 })
 // addMvt({ includePnts: true })

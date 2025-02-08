@@ -15,6 +15,8 @@
 // - parallelize the pmtiles internals
 // - 03-03
 // - produce labels off the main thread
+// - 03-04
+// - hide pmtiles internals for common patterns
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
 const resl = require('resl')
@@ -389,10 +391,11 @@ function addMvtModularly () {
   async function ready ({ style, labelOpts }) {
     // mixmap-pmtiles-inputs : start
     // - this includes `style` & `labelOpts`
-    const draw = {}
+    const draws = {}
+    const shaders = GeorenderShaders(map)
 
     // georender-shader-draw-key : [georender-prepare-prop-keys]
-    const spread = {
+    const spreads = {
       areas: ['areaP', 'areaT'],
       areaBorders: ['areaBorderP', 'areaBorderT'],
       lineStroke: ['lineP', 'lineT'],
@@ -403,7 +406,7 @@ function addMvtModularly () {
     const stencilShaders = StencilShaders(map)
 
     // created draws
-    for (const drawKey in spread) {
+    for (const drawKey in spreads) {
       const shader = georenderShaders[drawKey]
       delete shader.pickFrag
       draw[drawKey] = map.regl({
@@ -441,16 +444,16 @@ function addMvtModularly () {
     // tileKey : { tileBbox, tileProps }
     const tileKeyPropsMap = new Map()
     map.on('draw:start', () => {
-      drawVectorTiles(map, tileKeyPropsMap, draw, spread, labelOpts, styleTexture)
-      // if (tileSetTracker.isLoaded()) {
-      //   drawLabels(map, draw, tileKeyPropsMap, labels, labelUpdateOpts)
-      // }
+      drawVectorTiles(map, tileKeyPropsMap, draw, spreads, labelOpts, styleTexture)
+      if (tileSetTracker.isLoaded()) {
+        drawLabels(map, draw, labelProps)
+      }
     })
     map.on('draw:end', () => {
       if (!tileSetTracker.isLoaded()) return
       if (!labelProps) return
       // draw any labels we have accumulated
-      drawLabels(map, draw, labelProps)
+      // drawLabels(map, draw, labelProps)
     })
     const stylePixels = style.data
     const imageSize = [style.width, style.height]
@@ -651,16 +654,17 @@ addWaterBg({ zindex: 1 })
 // tileGrid(map, {
 //   zindex: 2,
 //   color: [0,0,0,1],
-//   label: {
-//     zindex: 51,
-//     fontSize: 14,
-//     fillColor: [1,1,1,1],
-//     strokeColor: [0,0,0,1],
-//   },
+//   label: false,
+//   // label: {
+//   //   zindex: 51,
+//   //   fontSize: 14,
+//   //   fillColor: [1,1,1,1],
+//   //   strokeColor: [0,0,0,1],
+//   // },
 // })
 addShoreBuffer({ zindex: 20 })
 addElevation({ zindex: 30 })
-addMvt({ includePnts: true })
+addMvt()
 // addMvtModularly()
 
 window.addEventListener('keydown', function (ev) {

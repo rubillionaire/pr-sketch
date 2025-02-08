@@ -190,12 +190,13 @@ function addElevation ({ zindex }) {
     `,
   }
   new MixmapPMTiles(map, {
-    // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/terrain-dem-v1-clipped-pr.pmtiles',
-    source: 'http://localhost:9966/pmtiles/terrain-dem-v1-clipped-pr.pmtiles',
+    source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/terrain-dem-v1-clipped-pr.pmtiles',
+    // source: 'http://localhost:9966/pmtiles/terrain-dem-v1-clipped-pr.pmtiles',
     tileType: TileType.Png,
     shaders: {
       elevation,
     },
+    useWorker: false,
   })
 }
 
@@ -293,28 +294,54 @@ function addShoreBuffer ({ zindex }) {
     },
   }
   new MixmapPMTiles(map, {
-    // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-shore-buffered.pmtiles',
-    source: 'http://localhost:9966/pmtiles/pr-shore-buffered.pmtiles',
+    source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-shore-buffered.pmtiles',
+    // source: 'http://localhost:9966/pmtiles/pr-shore-buffered.pmtiles',
     tileType: TileType.Png,
     shaders: {
       taper,
     },
+    useWorker: false,
   })
 }
 
-function addMvt ({ includePnts=true }={}) {
-  const filterFeature = includePnts ? null : (feature) => (feature.geometry.type !== 'Point')
-  var style = new Image
-  style.onload = function () {
+function addMvt () {
+  resl({
+    manifest: {
+      style: {
+        type: 'binary',
+        src: './style-textures/pr-mie.png',
+        parser: (data) => {
+          return decodePng(data)
+        },
+      },
+      labels: {
+        type: 'text',
+        parser: JSON.parse,
+        src: './style-textures/pr-mie.json',
+      }
+    },
+    onDone: ready,
+  })
+  function ready ({ style, labels }) {
+    const shaders = GeorenderShaders(map)
+    labels.shader = shaders.label
+    labels.update = {
+      style: {
+        ...style,
+        labelFontFamily: labels.fontFamily,
+      },
+      labelFeatureTypes: ['point'],
+    }
     new MixmapPMTiles(map, {
-      // source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
-      source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
+      source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
+      // source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
       tileType: TileType.Mvt,
-      style,  
-      filterFeature,
+      style,
+      labels,
+      useWorker: true,
+      shaders,
     })
   }
-  style.src = './style-textures/pr-mie.png'
 }
 
 function addMvtModularly () {
@@ -330,7 +357,7 @@ function addMvtModularly () {
       labelOpts: {
         type: 'text',
         parser: JSON.parse,
-        src: './style-textures/georender-basic-setup-label.json',
+        src: './style-textures/pr-mie.json',
       }
     },
     onDone: ready,
@@ -443,7 +470,8 @@ function addMvtModularly () {
         const mapProps = propsForMap(map)
         const workerMessage = {
           mapProps,
-          source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
+          source: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/pr-sketch/mie-prefecture/pr-mvt.pmtiles',
+          // source: 'http://localhost:9966/pmtiles/pr-mie.mvt.pmtiles',
           tileType: TileType.Mvt,
           tileKey,
           tileBbox,
@@ -480,17 +508,8 @@ function addMvtModularly () {
     // // back on main thread
     createGlyphProps(labelProps, map)  
     const t2 = performance.now()
-    for (const mapProps of map._props()) {
-      for (let i = 0; i < labelProps.glyphs.length; i++) {
-        const glyphProps = []
-        for (let j = 0; j < labelProps.glyphs[i].length; j++) {
-          glyphProps.push({
-            ...labelProps.glyphs[i][j],
-            ...mapProps,
-          })
-        }
-        draw.label[i](glyphProps)
-      }  
+    for (let i = 0; i < labelProps.glyphs.length; i++) {
+      draw.label[i](labelProps.glyphs[i])
     }
     const t3 = performance.now()
     // console.log('render-labels:end', t1-t0, t2-t1, t3-t2)
@@ -541,8 +560,8 @@ tileGrid(map, {
 addWaterBg({ zindex: 1 })
 addShoreBuffer({ zindex: 20 })
 addElevation({ zindex: 30 })
-// addMvt({ includePnts: true })
-addMvtModularly()
+addMvt()
+// addMvtModularly()
 
 window.addEventListener('keydown', function (ev) {
   if (ev.code === 'Equal') {

@@ -181,7 +181,7 @@ async function createDraw () {
     style,
   })
   const props = geodata.update(propsForMap(map))
-  const labelProps = labels.update(props, propsForMap(map), { style })
+  const labelProps = labels.update(props, propsForMap(map))
   spreadStyleTexture(styleTexture, props)
   createGlyphProps(labelProps, map)
 

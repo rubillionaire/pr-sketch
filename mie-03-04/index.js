@@ -353,10 +353,6 @@ function addMvt () {
     const shaders = GeorenderShaders(map)
     labels.shader = shaders.label
     labels.update = {
-      style: {
-        ...style,
-        labelFontFamily: labels.fontFamily,
-      },
       labelFeatureTypes: ['point'],
     }
     new MixmapPMTiles(map, {
@@ -409,7 +405,7 @@ function addMvtModularly () {
     for (const drawKey in spreads) {
       const shader = georenderShaders[drawKey]
       delete shader.pickFrag
-      draw[drawKey] = map.regl({
+      draws[drawKey] = map.regl({
         ...shader,
         ...stencilShaders.tileStencilHonor,
         uniforms: {
@@ -418,12 +414,12 @@ function addMvtModularly () {
         }
       })
     }
-    draw.stencil = {
+    draws.stencil = {
       reset: map.regl(stencilShaders.tileStencilReset),
       mark: map.regl(stencilShaders.tileStencilMark),
     }
 
-    draw.label = labelOpts.fontFamily.map(() => map.regl({
+    draws.label = labelOpts.fontFamily.map(() => map.regl({
       ...georenderShaders.label,
       uniforms: {
         ...georenderShaders.label.uniforms,
@@ -435,8 +431,8 @@ function addMvtModularly () {
     // mixmap-pmtiles-internals : start
     // init within a worker, `update` per tile set
     workerBrokers.labelProps.postMessage({
-      type: 'options',
-      payload: labelOpts,
+      type: 'initialize',
+      options: labelOpts,
     })
 
     const tileSetTracker = new TileSetTracker()
@@ -444,16 +440,13 @@ function addMvtModularly () {
     // tileKey : { tileBbox, tileProps }
     const tileKeyPropsMap = new Map()
     map.on('draw:start', () => {
-      drawVectorTiles(map, tileKeyPropsMap, draw, spreads, labelOpts, styleTexture)
-      if (tileSetTracker.isLoaded()) {
-        drawLabels(map, draw, labelProps)
-      }
+      drawVectorTiles(map, tileKeyPropsMap, draws, spreads, labelOpts, styleTexture)
     })
     map.on('draw:end', () => {
       if (!tileSetTracker.isLoaded()) return
-      if (!labelProps) return
-      // draw any labels we have accumulated
-      // drawLabels(map, draw, labelProps)
+      if (tileSetTracker.isLoaded()) {
+        drawLabels(map, draws, labelProps)
+      }
     })
     const stylePixels = style.data
     const imageSize = [style.width, style.height]
@@ -500,7 +493,6 @@ function addMvtModularly () {
 
     let labelProps
     workerBrokers.labelProps.addEventListener('message', (msg) => {
-      console.log('label-props-msg', tileSetTracker.isLoaded())
       if (!tileSetTracker.isLoaded()) return
       if (msg.detail.type !== 'update') return
       labelProps = msg.detail.labelProps
@@ -561,7 +553,7 @@ function addMvtModularly () {
     }
     workerBrokers.labelProps.postMessage({
       type: 'update',
-      payload: [
+      options: [
         georenderPropsForLabels,
         propsForMap(map),
         labelUpdateOpts,
@@ -573,7 +565,7 @@ function addMvtModularly () {
   // - labels (tiny-label instance)
   // - labelUpdateOpts (tiny-label.update options)
   // function drawLabels (map, draw, tileKeyPropsMap, labels, labelUpdateOpts) {
-  function spreadLabelProps (map, draw, labelProps) {
+  function spreadLabelProps (map, draws, labelProps) {
     // const georenderPropsForLabels = []
     // for (const [tileKey, { tileProps }] of tileKeyPropsMap) {
     //   georenderPropsForLabels.push(tileProps)
@@ -595,30 +587,22 @@ function addMvtModularly () {
             // ...mapProps,
           })
         }
-        draw.label[i].props = glyphProps
+        draws.label[i].props = glyphProps
       }
     // }
     // const t3 = performance.now()
     // console.log('render-labels:end', t1-t0, t2-t1, t3-t2)
   }
 
-  function drawLabels (map, draw, labelProps) {
+  function drawLabels (map, draws, labelProps) {
+    if (!labelProps) return
     createGlyphProps(labelProps, map)
-    for (const mapProps of map._props()) {
-      for (let i = 0; i < labelProps.glyphs.length; i++) {
-        const glyphProps = []
-        for (let j = 0; j < labelProps.glyphs[i].length; j++) {
-          glyphProps.push({
-            ...labelProps.glyphs[i][j],
-            ...mapProps,
-          })
-        }
-        draw.label[i](glyphProps)
-      }
+    for (let i = 0; i < labelProps.glyphs.length; i++) {
+      draws.label[i](labelProps.glyphs[i])
     }
   }
 
-  function drawVectorTiles (map, tileKeyPropsMap, draw, spread, styleTexture) {
+  function drawVectorTiles (map, tileKeyPropsMap, draws, spread, styleTexture) {
     // console.log('draw-vector-tiles', tileKeyPropsMap.size)
     // TODO write a common `drawRasterTile` setup as well
     for (const mapProps of map._props()) {
@@ -632,13 +616,13 @@ function addMvtModularly () {
           ...mapProps,
           ...bboxToMesh(tileBbox),
         }
-        draw.stencil.reset(tileResetProps)
-        draw.stencil.mark(tileMarkProps)
+        draws.stencil.reset(tileResetProps)
+        draws.stencil.mark(tileMarkProps)
         for (const drawKey in spread) {
           for (const tilePropKey of spread[drawKey]) {
-            if (!draw[drawKey]) continue
+            if (!draws[drawKey]) continue
             if (!tileProps[tilePropKey]) continue
-            draw[drawKey]({
+            draws[drawKey]({
               ...mapProps,
               ...tileProps[tilePropKey],
             })

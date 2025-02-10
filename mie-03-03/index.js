@@ -433,7 +433,7 @@ function addMvtModularly () {
     // init within a worker, `update` per tile set
     workerBrokers.labelProps.postMessage({
       type: 'options',
-      payload: labelOpts,
+      options: labelOpts,
     })
 
     const tileSetTracker = new TileSetTracker()
@@ -558,7 +558,7 @@ function addMvtModularly () {
     }
     workerBrokers.labelProps.postMessage({
       type: 'update',
-      payload: [
+      options: [
         georenderPropsForLabels,
         propsForMap(map),
         labelUpdateOpts,

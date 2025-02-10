@@ -1,17 +1,6 @@
-// basic-stack
+// georender-basic-stack
 // premise here is to use mixmap-georender to do the basic render
-// - mie-georender.nlb64 is provided by the ../osm-data/mie-prefecture
-//   Makefile, and its `data/mie-georender.nlb64` command. we base64
-//   encode the buffer to be restored here
-// - place-island.{png,json} come from ../georender-studio/Makefile
-//   and the `place-island` command.
-// - 01
-// - decoding buffers correctly
-// - todo: render labels
-// - todo: render points
-// - mixmap-georender@6
-// - 01-00
-// - mixmap-georedner@7
+// - mixmap-georender@7
 
 const mixmap = require('@rubenrodriguez/mixmap')
 const regl = require('regl')
@@ -21,8 +10,6 @@ const { decode: decodePng } = require('fast-png')
 const { default: prepare, propsForMap } = require('@rubenrodriguez/mixmap-georender/prepare')
 const { default: GeorenderShaders, pickfb } = require('@rubenrodriguez/mixmap-georender')
 const { createGlyphProps } = require('@rubenrodriguez/mixmap-georender/text')
-// const lpb = require('length-prefixed-buffers')
-// const b4a = require('b4a')
 
 const mix = mixmap(regl, {
   extensions: [
@@ -44,7 +31,7 @@ console.log([prWE[0],prSN[0],prWE[1],prSN[1]])
 const map = mix.create({
   // viewbox: [-67.356661,17.854597,-65.575714,18.517377],
   viewbox: [prWE[0],prSN[0],prWE[1],prSN[1]],
-  backgroundColor: [0.5, 0.5, 0.5, 1.0],
+  backgroundColor: [0.9, 0.9, 0.9, 1.0],
   pickfb,
 })
 
@@ -73,7 +60,8 @@ resl({
   manifest: {
     style: {
       type: 'binary',
-      src: './style-textures/georender-basic-setup-style.png',
+      // src: './style-textures/georender-basic-setup-style.png',
+      src: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/mixmap-georender/example/georender-basic-setup-style.png',
       parser: (data) => {
         return decodePng(data)
       },
@@ -81,11 +69,13 @@ resl({
     label: {
       type: 'text',
       parser: JSON.parse,
-      src: './style-textures/georender-basic-setup-label.json',
+      // src: './style-textures/georender-basic-setup-label.json',
+      src: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/mixmap-georender/example/georender-basic-setup-label.json',
     },
     decoded: {
       type: 'text',
-      src: './georender/basic-stack-georender.nlb64',
+      // src: './georender/basic-stack-georender.nlb64',
+      src: 'https://rr-studio-assets.nyc3.digitaloceanspaces.com/mixmap-georender/example/basic-stack-georender.nlb64',
       parser: (data) => {
         const bufs = []
         for (const enc of data.split('\n')) {
@@ -156,7 +146,11 @@ function ready ({ style, decoded, label }) {
   })
   function update() {
     // this can happen in a worker
-    const props = prep.update(propsForMap(map))
+    const props = prep.update(propsForMap(map), {
+      labels: {
+        labelFeatureTypes: ['point']
+      }
+    })
     // this needs to happen with full map access because we need our
     // webgl context available (map.regl.texture)
     createGlyphProps(props.label, map)

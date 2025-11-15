@@ -9,7 +9,8 @@
     "dev:serve": "serve public",
     "dev:watch": "watchify index.js -o public/bundle.js -v",
     "dev": "run-p dev:*",
-    "start": "budo index.js --dir public/ --live"
+    "start": "budo index.js --dir public/ --live --ssl --cert localhost.cert --key localhost.key",
+    "mkcert": " openssl req -x509 -newkey rsa:4096 -keyout localhost.key -out localhost.cert -days 9999 -nodes -subj /CN=127.0.0.1"
   },
   "author": "",
   "license": "ISC",

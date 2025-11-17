@@ -2,6 +2,9 @@
 // - fork of scroll-day-n-nite-09
 var app = require('choo')()
 var html = require('choo/html')
+var onload = require('on-load')
+var bel = require('bel')
+var defregl = require('deferred-regl')
 const mixmap = require('@rubenrodriguez/mixmap')
 const { pickUnpack } = require('@rubenrodriguez/mixmap-georender')
 const fs = require('fs')
@@ -48,12 +51,13 @@ const getMixSpecProp = (prop) => (mixName) => getMixSpec(mixName)[prop]
 const getMix = getMixSpecProp('mix')
 const getMixZindex = getMixSpecProp('zindex')
 
-for (const spec of mixSpecs) {
-  const mix = mixmap(regl, {
-    extensions: ['oes_element_index_uint'],
-  })
-  mixs.push(Object.assign({ mix }, spec))
-}
+// for (const spec of mixSpecs) {
+//   const reglOpts = {
+//     extensions: ['oes_element_index_uint'],
+//   }
+//   const mix = mixmap(regl, reglOpts)
+//   mixs.push(Object.assign({ mix }, spec))
+// }
 
 const staticRadiatingCoastlineOpts = {
   tick: 0,
@@ -152,11 +156,11 @@ const getName = (name) => maps.find(m => m.name === name)
 const getProp = (prop) => (name) => getName(name)[prop]
 const setProp = (prop) => (name, state) => getName(name)[prop](state)
 const mixForSpec = (spec) => spec.mix === undefined ? getMix('background') : getMix(spec.mix)
-const getTick = (name) => {
-  const i = maps.findIndex(m => m.name === name)
-  const mix = mixForSpec(getName(name))
-  return () => mix._rcom._mregl.subcontexts[i].tick
-}
+// const getTick = (name) => {
+//   const i = maps.findIndex(m => m.name === name)
+//   const mix = mixForSpec(getName(name))
+//   return () => mix._rcom._mregl.subcontexts[i].tick
+// }
 const getMap = getProp('map')
 const getDrawCmds = getProp('drawCmds')
 const setLightPosictionTick = setProp('updateLightPositionForTick')
@@ -202,10 +206,49 @@ const mapSpecs = [
   //   state: tickPositions.lateafternoon,
   //   mixName: 'background',
   // },
-].sort((a, b) => {
-  const am = getMixZindex(a.mixName)
-  const bm = getMixZindex(b.mixName)
-  return am - bm
+]
+
+mapSpecs.forEach((spec) => {
+  const reglOpts = {
+    extensions: ['oes_element_index_uint'],
+    attributes: {
+      preserveDrawingBuffer: true,
+    },
+  }
+  const mix = mixmap(regl, reglOpts)
+
+  const rcom = {
+    reglCreated: false,
+    regl: defregl(),
+    create: () => {
+      return rcom
+    },
+    render: () => {
+      console.log('render', spec.name)
+      const relement = bel.createElement('canvas', {
+        id: spec.name,
+        width: window.innerWidth * window.devicePixelRatio,
+        height: window.innerHeight * window.devicePixelRatio,
+        style: `width: ${window.innerWidth}px; height: ${window.innerHeight}px;`
+      })
+      onload(relement, function load (canvas) {
+        if (rcom.reglCreated) return
+        const r = regl(Object.assign({ canvas }, reglOpts))
+        rcom.regl.setRegl(r)
+        rcom.reglCreated = true
+        // canvas.dispatchEvent(new CustomEvent('regl-ready', {
+        //   composed: true,
+        //   bubbles: true,
+        //   detail: { spec, regl: rcom.regl, rcom },
+        // }))
+      })
+      return relement
+    },
+  }
+
+  // mix._rcom = rcom
+  
+  mixs.push(Object.assign({ mix }, spec))
 })
 
 for (const spec of mapSpecs) {
@@ -235,44 +278,41 @@ const mapPerMix = mixs
 
 function mapScroll2 (state, emit) {
   return html`<body class=${prefix} style=${bodyStyle}>
-    ${mixs.map(({ mixName, mix }) => {
+    ${mixs.map(({ mix }) => {
       return mix.render()
     })}
     <main class="full-width">
-      <section class="full-width">
-        <figure class="aspect-pr overflow-hidden">
-          ${state.cache(MapFillParent, 'cascadingTriptychTransition').render({
-              map: getMap('cascadingTriptychTransition'),
-              props: {
-                width: 0,
-                height: 0,
-                mouse: false,
-                attributes: {
-                  class: 'map',
-                },
-              }
-            })}
-        </figure>
+      <section class="full-width aspect-print">
+        ${state.cache(MapFillParent, 'cascadingTriptychTransition').render({
+          map: getMap('cascadingTriptychTransition'),
+          props: {
+            width: 0,
+            height: 0,
+            mouse: false,
+            attributes: {
+              class: 'map',
+            },
+          }
+      })}
       </section>
-      <section class="full-width">
-        <figure class="aspect-pr overflow-hidden">
-          ${state.cache(MapFillParent, 'nightMap').render({
-              map: getMap('nightMap'),
-              props: {
-                width: 0,
-                height: 0,
-                mouse: false,
-                attributes: {
-                  class: 'map',
-                },
-              }
-            })}
-        </figure>
+      <section class="full-width aspect-print">
+        ${state.cache(MapFillParent, 'nightMap').render({
+          map: getMap('nightMap'),
+          props: {
+            width: 0,
+            height: 0,
+            mouse: false,
+            attributes: {
+              class: 'map',
+            },
+          }
+        })}
       </section>
     </main>
   </body>`
 }
 async function mapScroll2Store (state, emitter) {
+  console.log('store-initialized')
   let cities
   let setHighlight
   let highlightAllCities = []
@@ -303,10 +343,19 @@ async function mapScroll2Store (state, emitter) {
   })
 
   emitter.on('draws-ready', () => {
+    console.log('draws-ready')
     emitter.emit('render')
 
     frame()
   })
+
+  // window.addEventListener('regl-ready', (event) => {
+  //   console.log('regl-ready')
+  //   const { spec } = event.detail
+  //   const map = getMap(spec.name)
+  //   map._unload()
+  //   map._load({ regl: event.detail.regl, rcom: event.detail.rcom })
+  // })
 
   function frame () {
     // drawing any map will re-draw all of them that are already
@@ -359,32 +408,28 @@ function trackProgress (id, onProgress) {
 
 window.downloadCanvas = () => {
   const mapCanvas = document.querySelector('canvas')
+
   // const downloadCanvas = document.createElement('canvas')
   // downloadCanvas.width = mapCanvas.width
   // downloadCanvas.height = mapCanvas.height
   // const context = downloadCanvas.getContext('2d')
   // context.drawImage(mapCanvas, 0, 0)
-  const du = mapCanvas.toDataURL()
-  function download (u) {
-    const a = document.createElement('a')
-    a.href = u
-    a.download = 'map.png'
-    a.click()
-  }
-  console.log({du})
-  download(du)
-
-  // downloadCanvas.toBlob((b) => {
-  //   console.log({b})
-  //   const u = URL.createObjectURL(b)
+  // const du = mapCanvas.toDataURL()
+  // function download (u) {
   //   const a = document.createElement('a')
   //   a.href = u
   //   a.download = 'map.png'
   //   a.click()
-
-  //   const newImg = document.createElement("img");
-
-  //   newImg.src = u;
-  //   document.body.appendChild(newImg);
-  // }, 'image/png')
+  // }
+  // console.log({du})
+  // download(du)
+  
+  mapCanvas.toBlob((b) => {
+    console.log({b})
+    const u = URL.createObjectURL(b)
+    const a = document.createElement('a')
+    a.href = u
+    a.download = 'map.png'
+    a.click()
+  }, 'image/png')
 }

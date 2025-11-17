@@ -98,6 +98,9 @@ section#map-fading-in {
 .aspect-pr {
   aspect-ratio: 2/1.2;
 }
+.aspect-print {
+  aspect-ratio: 4560/4023;
+}
 .text-dark {
   color: var(--color-dark);
 }

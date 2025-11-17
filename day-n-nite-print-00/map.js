@@ -347,7 +347,7 @@ async function createProps ({ maps, includeIsland=false }) {
     const waterSideBuffer = buffer(land, bufferIncrement * 0.3, { units })
     const waterSide = difference(waterSideBuffer, land)
     bothSides.push(waterSide)
-    const landSideBuffer = buffer(land, -bufferIncrement, { units })
+    const landSideBuffer = buffer(land, -bufferIncrement/3, { units })
     if (landSideBuffer) {
       const landSide = difference(land, landSideBuffer)  
       bothSides.push(landSide)
@@ -429,7 +429,7 @@ async function createProps ({ maps, includeIsland=false }) {
           resolve(img)
         }
       })
-      img.src = './style-textures/pr-radiating-coastline.png'
+      img.src = './style-textures/pr-radiating-coastline-print.png'
       return p
     })()
     // const style = await makeStylesheet(stylesheet)
@@ -866,7 +866,7 @@ function createDraws ({
 
         float colorFlipper = clamp(
           step(lightTransitionBuffer, dotSphereLight) +
-          step(randomThreshold, hiddenThreshold),
+          0.0,
           0.0, 1.0
         );
 

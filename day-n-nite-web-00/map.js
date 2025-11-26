@@ -1,13 +1,8 @@
-// scroll-day-n-nite
-// - fork of radiating-coastline-16
-// - build note, uses `glsl-georender-style-texture`  @ 4.0.2
+// day-n-night
+// - fork of day-n-nite-print-00
 // - 00
-// - 01
-// - 02
-// - refactor data so that all the processing only happens once
-// - 03
-// - add displayThreshold to config options for drawing
-//    radiatingCoastline with
+// - coastline now displays pixels in dark or light values instead
+//    of leaning on opacity to show the coastline moving
 
 const resl = require('resl')
 const glsl = require('glslify')
@@ -67,7 +62,6 @@ const params = {
     ? searchParams.get('terrainZoom')
     : '9'
 }
-console.log({params})
 
 const defaultColors = {
   // hsluvLight: [79.9, 100.0, 94.9].concat([255.0]),
@@ -348,7 +342,7 @@ async function createProps ({ maps, includeIsland=false }) {
     const waterSideBuffer = buffer(land, bufferIncrement * 0.3, { units })
     const waterSide = difference(waterSideBuffer, land)
     bothSides.push(waterSide)
-    const landSideBuffer = buffer(land, -bufferIncrement, { units })
+    const landSideBuffer = buffer(land, -bufferIncrement/3, { units })
     if (landSideBuffer) {
       const landSide = difference(land, landSideBuffer)  
       bothSides.push(landSide)
@@ -606,7 +600,6 @@ function createDraws ({
     ? radiatingCoastlineOpts.displayThreshold
     : 0.0
 
-
   const geoRenderShaders = shaders(map)
   const geoRenderShadersTick = {
     lineFill: Object.assign({}, geoRenderShaders.lineFill, {
@@ -773,7 +766,7 @@ function createDraws ({
           float x = 1.0 - step(d, mod(t, d+g));
           float tt = 1.0 - (
             sin(
-              (tick * 0.1 + vRadiatingCoastlineBufferIndex * 40.0 +
+              (tick * 1.1 + vRadiatingCoastlineBufferIndex * 40.0 +
                 vpos.x * vpos.y * 80.0 +
                 mod(t, 20.0) * 4.0
               )/18.0
